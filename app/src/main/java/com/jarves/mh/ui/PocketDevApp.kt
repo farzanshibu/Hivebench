@@ -220,6 +220,7 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
+import com.jarves.mh.skills.HarnessCommandInfo
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
@@ -420,6 +421,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onSelectAgent = viewModel::selectAgent,
             onToggleAutoApprove = viewModel::toggleAutoApproveTools,
             onSelectModel = viewModel::selectModel,
+            harnessCommands = viewModel.commonCapabilityPool.getHarnessCommands(state.agentKind),
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -4094,6 +4096,7 @@ private fun WorkspaceScreen(
     onSelectAgent: (AgentKind) -> Unit = {},
     onToggleAutoApprove: () -> Unit = {},
     onSelectModel: (String) -> Unit = {},
+    harnessCommands: List<HarnessCommandInfo> = emptyList(),
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4426,6 +4429,7 @@ private fun WorkspaceScreen(
                         onCreateTask("Task from Chat", taskText, com.jarves.mh.model.TaskPriority.MEDIUM, null, emptyList())
                     },
                     onOpenAgentSwitch = { showAgentPicker = true },
+                    harnessCommands = harnessCommands,
                 )
                 WorkspaceTab.TASKS -> TaskBoardScreen(
                     tasks = state.orchestratorTasks,
@@ -5077,6 +5081,7 @@ private fun ChatTab(
     onToggleAutoApprove: () -> Unit = {},
     onSelectModel: (String) -> Unit = {},
     onSelectAgent: (AgentKind) -> Unit = {},
+    harnessCommands: List<HarnessCommandInfo> = emptyList(),
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -5374,49 +5379,86 @@ private fun ChatTab(
 
                 // Slash command quick autocomplete popup when prompt starts with "/"
                 if (prompt.startsWith("/")) {
-                    val slashChips = listOf(
-                        Triple("/model ", "⚡ /model", "Switch AI model"),
-                        Triple("/effort ", "🧠 /effort", "Switch reasoning effort"),
-                        Triple("/bypass", "🛡️ /bypass", "Toggle auto-approval"),
-                        Triple("/agent ", "🤖 /agent", "Switch coding agent"),
-                        Triple("/jcode", "⚡ /jcode", "Switch to JCode agent"),
-                        Triple("/piagent", "🥧 /piagent", "Switch to Pi agent"),
-                        Triple("/commandcode", "⌨️ /cmdcode", "Switch to Command Code"),
-                        Triple("/cline", "🔧 /cline", "Switch to Cline agent"),
-                        Triple("/custom", "🛠️ /custom", "Switch to Custom Runner"),
-                        Triple("/help", "❓ /help", "List all slash commands"),
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(bottom = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        slashChips.forEach { (cmd, label, _) ->
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, NeoLime, RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        if (cmd.endsWith(" ")) {
-                                            prompt = cmd
-                                        } else {
-                                            onSend(cmd)
+                    val matchingCmd = harnessCommands.firstOrNull { prompt.startsWith(it.command + " ") }
+                    if (matchingCmd != null && matchingCmd.hasArgs && matchingCmd.argSuggestions.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${matchingCmd.command}:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 2.dp),
+                            )
+                            matchingCmd.argSuggestions.forEach { suggestion ->
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, NeoLime, RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val fullCmd = "${matchingCmd.command} $suggestion"
+                                            onSend(fullCmd)
                                             prompt = ""
-                                        }
-                                    },
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                        },
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                ) {
+                                    Text(
+                                        suggestion,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) NeoLime else NeoBlack,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        val typed = prompt.trim()
+                        val visibleCommands = if (typed == "/") {
+                            harnessCommands
+                        } else {
+                            harnessCommands.filter { it.command.startsWith(typed, ignoreCase = true) }
+                        }
+
+                        if (visibleCommands.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(bottom = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    label,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDark) NeoLime else NeoBlack,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
+                                visibleCommands.forEach { cmdInfo ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, NeoLime, RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                if (cmdInfo.hasArgs) {
+                                                    prompt = "${cmdInfo.command} "
+                                                } else {
+                                                    onSend(cmdInfo.command)
+                                                    prompt = ""
+                                                }
+                                            },
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                    ) {
+                                        Text(
+                                            cmdInfo.label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDark) NeoLime else NeoBlack,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

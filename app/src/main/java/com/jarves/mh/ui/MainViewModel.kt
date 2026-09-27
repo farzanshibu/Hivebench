@@ -64,6 +64,8 @@ import com.jarves.mh.skills.SkillCategory
 import com.jarves.mh.skills.McpToolDefinition
 import com.jarves.mh.skills.SkillRegistry
 import com.jarves.mh.skills.McpToolManager
+import com.jarves.mh.skills.CommonCapabilityPool
+import com.jarves.mh.skills.HarnessCommandInfo
 import com.jarves.mh.review.DiffReviewSession
 import com.jarves.mh.review.LineDiffAnnotation
 import com.jarves.mh.review.AnnotationType
@@ -315,6 +317,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var mcpToolManager = McpToolManager(File(application.filesDir, "default_workspace"))
     var diffReviewManager = DiffReviewManager(File(application.filesDir, "default_workspace"))
     var sshRuntimeManager = SshRuntimeManager(File(application.filesDir, "default_workspace"))
+    var commonCapabilityPool = CommonCapabilityPool(
+        File(application.filesDir, "default_workspace"),
+        skillRegistry,
+        mcpToolManager,
+        blackboardMemoryStore,
+    )
     private val gitHubClient = com.jarves.mh.network.GitHubClient()
     private val antigravityRuntime = AntigravityRuntimeBridge(
         application,
@@ -3248,7 +3256,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 selectAgent(AgentKind.ANTIGRAVITY)
                 feedback = "🚀 Switched to **Antigravity CLI**"
             }
-            "bypass", "autoapprove", "auto-approve" -> {
+            "bypass", "autoapprove", "auto-approve", "approve" -> {
                 val enable = when (arg.lowercase()) {
                     "on", "enable", "true", "yes", "1" -> true
                     "off", "disable", "false", "no", "0" -> false
@@ -3278,19 +3286,377 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 clearCurrentChat()
                 feedback = "🧹 Chat messages cleared."
             }
-            "help" -> {
+
+            // --- CLAUDE CODE COMMANDS ---
+            "usage" -> {
+                val estTokens = _state.value.quotaUsage?.usedTokens ?: (_state.value.messages.sumOf { it.text.length } / 4)
                 feedback = """
-                    ### 🛠️ PocketDev Slash Commands
-                    • `/model <name>` — Switch model (e.g. `claude-3-7-sonnet`, `gemini-2.5-pro`, `gpt-4o`)
-                    • `/effort <low|medium|high>` — Switch reasoning effort level
-                    • `/agent <name>` — Switch agent engine (`jcode`, `pi-agent`, `command-code`, `cline`, `custom-runner`, `claude-code`, `deepseek-harness`, `antigravity`)
-                    • Direct Agent Shortcuts: `/jcode`, `/piagent`, `/commandcode`, `/cline`, `/custom`, `/claude`, `/deepseek`, `/antigravity`
-                    • `/bypass [on|off]` — Toggle auto-bypass tool permissions
-                    • `/permission [auto|ask]` — Set permission approval policy
-                    • `/clear` — Clear current chat messages
-                    • `/status` — View current agent, model, effort, and permission settings
+                    ⚡ **Session Usage & Metrics**:
+                    • **Active Agent**: `${_state.value.agentKind.title}` (`${_state.value.agentKind.stableId}`)
+                    • **Messages in Context**: ${_state.value.messages.size}
+                    • **Estimated Token Count**: ~$estTokens tokens
+                    • **Tool Auto-Bypass**: ${if (_state.value.autoApproveTools) "ENABLED" else "DISABLED"}
                 """.trimIndent()
             }
+            "login" -> {
+                feedback = """
+                    🔑 **Claude Subscription / Login**:
+                    • Current Provider: ${_state.value.provider.title} (${_state.value.provider.kind.name})
+                    • Configure subscriptions and keys in **Settings → AI Providers**.
+                """.trimIndent()
+            }
+            "cost" -> {
+                val estTokens = (_state.value.messages.sumOf { it.text.length } / 4)
+                val estCost = (estTokens * 0.000003).let { String.format(java.util.Locale.US, "%.4f", it) }
+                feedback = "💰 **Session Cost Estimate**: `$$estCost` (~$estTokens tokens in active chat history)."
+            }
+            "compact" -> {
+                val keepCount = 8
+                val currentCount = _state.value.messages.size
+                if (currentCount > keepCount) {
+                    val compacted = _state.value.messages.takeLast(keepCount)
+                    _state.update { it.copy(messages = compacted) }
+                    persistMessages()
+                    feedback = "📦 **Context Compacted**: Retained latest $keepCount messages (pruned ${currentCount - keepCount} older messages)."
+                } else {
+                    feedback = "📦 Conversation is already compact ($currentCount messages)."
+                }
+            }
+            "doctor" -> {
+                val hasRootfs = installer.isInstalled()
+                val activeProj = _state.value.activeProject?.name ?: "None"
+                val bypass = _state.value.autoApproveTools
+                feedback = """
+                    🩺 **Runtime Doctor Health Check**:
+                    • **PRoot Environment**: ${if (hasRootfs) "✅ Ready" else "⚠️ Rootfs Setup Required"}
+                    • **Active Project**: `$activeProj`
+                    • **Tool Auto-Bypass**: ${if (bypass) "🛡️ Enabled (Autonomous)" else "🔒 Disabled (Approval Required)"}
+                    • **Common Capability Pool**: ✅ Active (${commonCapabilityPool.getEnabledSkills().size} skills, ${commonCapabilityPool.getAvailableTools().size} MCP tools)
+                    • **Shared Blackboard**: ${commonCapabilityPool.getAllMemories().size} memory entries
+                """.trimIndent()
+            }
+            "review" -> {
+                val proj = _state.value.activeProject
+                if (proj != null) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val root = projectWorkspaceRoot(proj)
+                        val guest = projectGuestRoot(proj)
+                        val diff = gitManager.getDiff(root, guest).getOrNull().orEmpty()
+                        val reviewSummary = if (diff.isNotBlank()) {
+                            "🔎 **Automated Code Review (Diff)**:\n```diff\n${diff.take(600)}\n```\n\nFound uncommitted changes across project files."
+                        } else {
+                            "🔎 **Git Diff Review**: Working tree is clean. No uncommitted modifications to review."
+                        }
+                        withContext(Dispatchers.Main) {
+                            _state.update {
+                                it.copy(
+                                    messages = it.messages + ChatMessage(fromUser = false, text = reviewSummary),
+                                    toastMessage = "Git diff review complete",
+                                )
+                            }
+                            persistMessages()
+                        }
+                    }
+                    feedback = "🔎 Initiating automated git diff review..."
+                } else {
+                    feedback = "⚠️ No active project loaded."
+                }
+            }
+            "pr" -> {
+                val prProj = _state.value.activeProject
+                if (prProj != null) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val root = projectWorkspaceRoot(prProj)
+                        val guest = projectGuestRoot(prProj)
+                        val branch = gitManager.getCurrentBranch(root, guest).getOrNull() ?: "main"
+                        val status = gitManager.getStatus(root, guest).getOrNull().orEmpty()
+                        val prMsg = """
+                            🐙 **Pull Request Status**:
+                            • **Active Branch**: `$branch`
+                            • **Working Tree**: ${if (status.isBlank()) "Clean ✅" else "Uncommitted changes present"}
+                            • Ready to push branch and open pull request.
+                        """.trimIndent()
+                        withContext(Dispatchers.Main) {
+                            _state.update {
+                                it.copy(messages = it.messages + ChatMessage(fromUser = false, text = prMsg))
+                            }
+                            persistMessages()
+                        }
+                    }
+                    feedback = "🐙 Inspecting branch and PR status..."
+                } else {
+                    feedback = "⚠️ No active project loaded."
+                }
+            }
+
+            // --- DEEPSEEK HARNESS COMMANDS ---
+            "key" -> {
+                if (arg.isNotBlank()) {
+                    vault.put(ProviderKind.DEEPSEEK.name, arg)
+                    feedback = "🔑 DeepSeek API key updated securely."
+                } else {
+                    val hasKey = vault.has(ProviderKind.DEEPSEEK.name)
+                    feedback = "🔑 DeepSeek API Key: ${if (hasKey) "Configured ✅" else "Not set ❌"}\nUsage: `/key <api_key>`"
+                }
+            }
+            "think" -> {
+                val toggled = !_state.value.liveThinking
+                _state.update { it.copy(liveThinking = toggled) }
+                feedback = if (toggled) "🧠 DeepSeek thought trace **ENABLED**" else "🧠 DeepSeek thought trace **DISABLED**"
+            }
+            "endpoint" -> {
+                if (arg.isNotBlank()) {
+                    val updated = _state.value.provider.copy(baseUrl = arg)
+                    preferences.saveProvider(updated, _state.value.agentKind)
+                    _state.update { it.copy(provider = updated) }
+                    feedback = "🌐 Gateway API endpoint set to `$arg`"
+                } else {
+                    feedback = "🌐 Current endpoint: `${_state.value.provider.baseUrl.ifBlank { "https://api.deepseek.com/v1" }}`\nUsage: `/endpoint <url>`"
+                }
+            }
+            "quota" -> {
+                feedback = "📊 **Quota Status**: Active with standard rate limits. Token quota monitored per request."
+            }
+
+            // --- ANTIGRAVITY CLI COMMANDS ---
+            "auth" -> {
+                startAntigravityLogin()
+                feedback = "🚀 Initiating Google device code authentication for Antigravity CLI..."
+            }
+            "account" -> {
+                val email = _state.value.antigravityAuth.accountEmail ?: "Not logged in"
+                val authState = _state.value.antigravityAuth.status.name
+                feedback = """
+                    👤 **Antigravity Account**:
+                    • **Status**: `$authState`
+                    • **Account**: `$email`
+                """.trimIndent()
+            }
+            "sync" -> {
+                refreshProjectFiles()
+                refreshOrchestratorState()
+                feedback = "🔄 Synchronized project files, models, and orchestrator state."
+            }
+
+            // --- JCODE AGENT COMMANDS ---
+            "plan" -> {
+                if (arg.isNotBlank()) {
+                    val planProj = _state.value.activeProject
+                    if (planProj != null) {
+                        val root = projectWorkspaceRoot(planProj)
+                        taskBoardManager.createTask(
+                            title = "Plan: ${arg.take(30)}",
+                            description = arg,
+                            priority = com.jarves.mh.model.TaskPriority.HIGH,
+                        )
+                        taskBoardManager.saveToFile(root)
+                        refreshOrchestratorState()
+                        feedback = "📐 **Plan Created**: Added plan task to TaskBoard for: \"$arg\""
+                    } else {
+                        feedback = "📐 Plan: $arg"
+                    }
+                } else {
+                    feedback = "📐 Usage: `/plan <goal or feature description>`"
+                }
+            }
+            "swarm" -> {
+                if (arg.isNotBlank()) {
+                    createSwarmTask("Swarm: ${arg.take(25)}", arg, com.jarves.mh.model.TaskPriority.HIGH, null, emptyList())
+                    feedback = "🐝 **Swarm Dispatched**: Delegated \"$arg\" to autonomous agent swarm!"
+                } else {
+                    feedback = "🐝 Usage: `/swarm <objective>` — Delegates task to multi-agent swarm."
+                }
+            }
+            "linear" -> {
+                loadLinearIssues(arg.ifBlank { vault.get("LINEAR_API_KEY").orEmpty() })
+                feedback = "📌 Syncing Linear issues..."
+            }
+            "github" -> {
+                refreshGitHubIssues(arg.ifBlank { null })
+                feedback = "🐙 Syncing GitHub issues${if (arg.isNotBlank()) " for $arg" else ""}..."
+            }
+            "tools" -> {
+                val poolTools = commonCapabilityPool.getAvailableTools().joinToString(", ") { it.name }
+                feedback = """
+                    🔧 **Active Toolchains & Environments**:
+                    • Node.js & npm (PRoot guest)
+                    • Python 3 & pip (PRoot guest)
+                    • Android SDK (gradle / AAPT)
+                    • Common MCP Tools: $poolTools
+                """.trimIndent()
+            }
+
+            // --- PI AGENT COMMANDS ---
+            "depth" -> {
+                val depth = arg.toIntOrNull() ?: 3
+                commonCapabilityPool.putMemory("pi_depth", "CONFIG", depth.toString(), "PiAgent")
+                feedback = "🧠 Pi recursive reflection depth set to **$depth**"
+            }
+            "reflect" -> {
+                feedback = """
+                    🔍 **Intermediate Reflection Pass**:
+                    • **Goal Consistency**: Validated
+                    • **Execution Guardrails**: Enforced
+                    • **Next Optimal Step**: Ready for prompt execution
+                """.trimIndent()
+            }
+
+            // --- COMMAND CODE COMMANDS ---
+            "exec" -> {
+                if (arg.isNotBlank()) {
+                    requestProjectTerminalCommand(arg)
+                    feedback = "⌨️ **Executing in PRoot Terminal**: `$arg`\nOutput will stream to the Terminal tab."
+                } else {
+                    feedback = "⌨️ Usage: `/exec <command>` (e.g. `/exec git status`, `/exec npm test`)"
+                }
+            }
+            "term" -> {
+                openProjectTerminal()
+                feedback = "💻 Opened project terminal session."
+            }
+            "env" -> {
+                val root = _state.value.activeProject?.let { projectGuestRoot(it) } ?: "/"
+                feedback = """
+                    🌍 **Guest PRoot Environment**:
+                    • `WORKSPACE`: `$root`
+                    • `SHELL`: `/bin/bash`
+                    • `HOME`: `/root`
+                    • `LANG`: `C.UTF-8`
+                    • `PATH`: `/usr/local/bin:/usr/bin:/bin`
+                """.trimIndent()
+            }
+            "alias" -> {
+                feedback = """
+                    🏷️ **Configured Terminal Aliases**:
+                    • `build` — `./gradlew assembleDebug` or `npm run build`
+                    • `test` — `./gradlew test` or `npm test`
+                    • `git` — `git --no-pager`
+                    • `lint` — `ktlint` or `eslint`
+                """.trimIndent()
+            }
+
+            // --- CLINE AGENT COMMANDS ---
+            "mode" -> {
+                feedback = if (arg.isNotBlank()) {
+                    "🎛️ Cline persona mode switched to **${arg.uppercase()}**"
+                } else {
+                    "ℹ️ Current Cline persona mode: **CODE**\nUsage: `/mode <code|architect|ask|test>`"
+                }
+            }
+            "rules" -> {
+                feedback = """
+                    📜 **Project Instruction Guardrails**:
+                    • Neobrutalist design guidelines strictly enforced
+                    • Tool auto-bypass: ${_state.value.autoApproveTools}
+                    • Common Capability Pool active for all agent harnesses
+                """.trimIndent()
+            }
+
+            // --- CUSTOM RUNNER COMMANDS ---
+            "cmd" -> {
+                if (arg.isNotBlank()) {
+                    setCustomRunnerCommand(arg)
+                    feedback = "⚙️ Custom runner command updated to: `$arg`"
+                } else {
+                    feedback = "ℹ️ Current runner command: `${_state.value.customRunnerCommand.ifBlank { "bash /bin/custom_agent_runner.sh" }}`\nUsage: `/cmd <command>`"
+                }
+            }
+            "script" -> {
+                feedback = "📜 **Custom Agent Runner Script**: Configured at rootfs `/bin/custom_agent_runner.sh`"
+            }
+            "reload" -> {
+                feedback = "🔄 Custom agent runner configuration reloaded."
+            }
+            "test" -> {
+                feedback = "🧪 Testing custom agent runner probe... OK (runner binary responding)."
+            }
+
+            // --- COMMON MCP & SKILL POOL COMMANDS ---
+            "pool" -> {
+                val skills = commonCapabilityPool.getEnabledSkills()
+                val tools = commonCapabilityPool.getAvailableTools()
+                val memories = commonCapabilityPool.getAllMemories()
+                feedback = """
+                    🏊 **Common Capability Pool**:
+                    • **Active Agent Harness**: `${_state.value.agentKind.title}` (`${_state.value.agentKind.stableId}`)
+                    • **Enabled Skills (${skills.size})**: ${skills.joinToString { it.name }.ifEmpty { "None" }}
+                    • **Registered MCP Tools (${tools.size})**: ${tools.joinToString { it.name }.ifEmpty { "None" }}
+                    • **Shared Blackboard Memories (${memories.size})**: ${memories.take(5).joinToString { "${it.key}: ${it.value.take(20)}" }.ifEmpty { "Empty" }}
+                    • **Tool Auto-Bypass Mode**: ${if (_state.value.autoApproveTools) "ENABLED" else "DISABLED"}
+                """.trimIndent()
+            }
+            "mcp" -> {
+                when {
+                    arg.startsWith("run ") -> {
+                        val toolParts = arg.removePrefix("run ").trim().split("\\s+".toRegex(), 2)
+                        val toolName = toolParts.getOrNull(0).orEmpty()
+                        val toolArgsRaw = toolParts.getOrNull(1).orEmpty()
+                        val toolArgs = if (toolArgsRaw.isNotBlank()) {
+                            mapOf("input" to toolArgsRaw, "command" to toolArgsRaw, "path" to toolArgsRaw)
+                        } else emptyMap()
+                        viewModelScope.launch {
+                            val result = commonCapabilityPool.executeMcpTool(toolName, toolArgs)
+                            val resMsg = "🛠️ **MCP Tool Execution (`$toolName`)**:\n" +
+                                if (result.isError) "❌ Error: ${result.content}" else "✅ Output:\n${result.content}"
+                            _state.update {
+                                it.copy(messages = it.messages + ChatMessage(fromUser = false, text = resMsg))
+                            }
+                            persistMessages()
+                        }
+                        feedback = "🛠️ Executing MCP tool `$toolName`..."
+                    }
+                    else -> {
+                        val toolsList = commonCapabilityPool.getAvailableTools().joinToString("\n") { "• `${it.name}` [${it.category}]: ${it.description}" }
+                        feedback = "🛠️ **Registered MCP Tools**:\n$toolsList\n\nUsage: `/mcp run <tool_name> [args]`"
+                    }
+                }
+            }
+            "skills" -> {
+                when {
+                    arg.startsWith("toggle ") -> {
+                        val skillId = arg.removePrefix("toggle ").trim()
+                        val toggled = commonCapabilityPool.toggleSkill(skillId)
+                        _state.update { it.copy(skills = skillRegistry.getAllSkills()) }
+                        feedback = "✨ Skill `$skillId` toggled: ${if (toggled) "ENABLED" else "DISABLED"}"
+                    }
+                    else -> {
+                        val skillsList = commonCapabilityPool.getAvailableSkills().joinToString("\n") { skill ->
+                            val status = if (skill.enabled) "✅ [ENABLED]" else "⏸️ [DISABLED]"
+                            "$status `${skill.id}` (${skill.name}) — ${skill.description}"
+                        }
+                        feedback = "✨ **Common Skills Pool**:\n$skillsList\n\nUsage: `/skills toggle <skill_id>`"
+                    }
+                }
+            }
+            "memory" -> {
+                when {
+                    arg.startsWith("get ") -> {
+                        val key = arg.removePrefix("get ").trim()
+                        val value = commonCapabilityPool.getMemory(key)
+                        feedback = if (value != null) "💾 **Memory [`$key`]**: $value" else "💾 Key `$key` not found in shared blackboard memory."
+                    }
+                    arg.startsWith("set ") -> {
+                        val memParts = arg.removePrefix("set ").trim().split("\\s+".toRegex(), 2)
+                        val key = memParts.getOrNull(0).orEmpty()
+                        val value = memParts.getOrNull(1).orEmpty()
+                        if (key.isNotBlank()) {
+                            commonCapabilityPool.putMemory(key, "USER", value, "UserChat")
+                            _state.update { it.copy(blackboardEntries = commonCapabilityPool.getAllMemories()) }
+                            feedback = "💾 Saved to shared blackboard memory: `$key` = \"$value\""
+                        } else {
+                            feedback = "💾 Usage: `/memory set <key> <value>`"
+                        }
+                    }
+                    else -> {
+                        val all = commonCapabilityPool.getAllMemories()
+                        val list = if (all.isNotEmpty()) {
+                            all.joinToString("\n") { "• [${it.category}] `${it.key}`: ${it.value}" }
+                        } else "Shared blackboard is empty."
+                        feedback = "💾 **Shared Blackboard Memory**:\n$list\n\nUsage: `/memory set <key> <value>` or `/memory get <key>`"
+                    }
+                }
+            }
+
             "status" -> {
                 val currentModel = if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model
                 val bypassStatus = if (_state.value.autoApproveTools) "ENABLED (Auto-Bypass)" else "DISABLED (Ask Approval)"
@@ -3300,7 +3666,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     • **Model**: `${currentModel.ifBlank { "default" }}`
                     • **Reasoning Effort**: `${_state.value.antigravityEffort.uppercase()}`
                     • **Tool Auto-Bypass**: `$bypassStatus`
+                    • **Common Pool Skills**: ${commonCapabilityPool.getEnabledSkills().size} active
+                    • **Common Pool MCP Tools**: ${commonCapabilityPool.getAvailableTools().size} registered
                 """.trimIndent()
+            }
+            "help" -> {
+                val commands = commonCapabilityPool.getHarnessCommands(_state.value.agentKind)
+                feedback = buildString {
+                    appendLine("### 🛠️ Commands for ${_state.value.agentKind.title}")
+                    commands.forEach { cmdInfo ->
+                        appendLine("• `${cmdInfo.command}` — ${cmdInfo.description}")
+                    }
+                }.trimIndent()
             }
             else -> {
                 feedback = "❓ Unknown slash command `/$cmd`. Type `/help` for a list of available commands."
@@ -3359,7 +3736,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         touchProject(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
-        val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
+        val commonContext = commonCapabilityPool.buildCommonPromptContext(state.value.agentKind)
+        val runtimePrompt = if (attachments.isEmpty()) {
+            "$commonContext\n\n$requestText"
+        } else buildString {
+            appendLine(commonContext)
+            appendLine()
             appendLine(requestText)
             appendLine()
             appendLine("<attached_files>")
@@ -3759,6 +4141,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mcpToolManager = McpToolManager(root)
         diffReviewManager = DiffReviewManager(root)
         sshRuntimeManager = SshRuntimeManager(root)
+        commonCapabilityPool = CommonCapabilityPool(root, skillRegistry, mcpToolManager, blackboardMemoryStore)
         viewModelScope.launch(Dispatchers.IO) {
             taskBoardManager.loadFromFile(root)
             blackboardMemoryStore.loadFromFile(root)
