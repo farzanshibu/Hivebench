@@ -415,6 +415,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onSaveLinearApiKey = viewModel::setLinearApiKey,
             onRefreshLinearIssues = viewModel::refreshLinearIssues,
             onImportLinearIssue = viewModel::importLinearIssueToTask,
+            onRefreshGitHubIssues = viewModel::refreshGitHubIssues,
+            onImportGitHubIssue = viewModel::importGitHubIssueToTask,
             onSelectAgent = viewModel::selectAgent,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
@@ -4070,6 +4072,8 @@ private fun WorkspaceScreen(
     onSaveLinearApiKey: (String) -> Unit = {},
     onRefreshLinearIssues: () -> Unit = {},
     onImportLinearIssue: (com.jarves.mh.network.LinearIssue) -> Unit = {},
+    onRefreshGitHubIssues: (String?) -> Unit = {},
+    onImportGitHubIssue: (com.jarves.mh.network.GitHubIssue) -> Unit = {},
     onSelectAgent: (AgentKind) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
@@ -4432,6 +4436,11 @@ private fun WorkspaceScreen(
                     onSaveLinearApiKey = onSaveLinearApiKey,
                     onRefreshLinearIssues = onRefreshLinearIssues,
                     onImportLinearIssue = onImportLinearIssue,
+                    githubIssues = state.githubIssues,
+                    githubIssuesLoading = state.githubIssuesLoading,
+                    githubRepoName = state.githubRepoOverride ?: state.activeProject?.description?.takeIf { it.startsWith("GitHub · ") }?.removePrefix("GitHub · ")?.trim(),
+                    onRefreshGitHubIssues = onRefreshGitHubIssues,
+                    onImportGitHubIssue = onImportGitHubIssue,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,

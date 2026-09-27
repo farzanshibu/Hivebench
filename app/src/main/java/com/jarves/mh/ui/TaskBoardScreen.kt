@@ -108,6 +108,7 @@ import com.jarves.mh.model.ScheduledTask
 import com.jarves.mh.model.TaskPriority
 import com.jarves.mh.model.TaskStatus
 import com.jarves.mh.network.LinearIssue
+import com.jarves.mh.network.GitHubIssue
 import com.jarves.mh.orchestrator.SwarmAuditEvent
 import com.jarves.mh.ui.theme.NeoBlack
 import com.jarves.mh.ui.theme.NeoDarkBorder
@@ -124,6 +125,7 @@ enum class TaskBoardTab(val label: String, val icon: ImageVector) {
     SKILLS("Skills", Icons.Default.Tune),
     REVIEWS("Diff Review", Icons.Default.Search),
     LINEAR("Linear", Icons.Default.Bookmark),
+    GITHUB_ISSUES("GitHub", Icons.Default.Code),
     AUDIT("Audit Log", Icons.Default.History),
 }
 
@@ -161,6 +163,11 @@ fun TaskBoardScreen(
     onSaveLinearApiKey: (String) -> Unit = {},
     onRefreshLinearIssues: () -> Unit = {},
     onImportLinearIssue: (LinearIssue) -> Unit = {},
+    githubIssues: List<GitHubIssue> = emptyList(),
+    githubIssuesLoading: Boolean = false,
+    githubRepoName: String? = null,
+    onRefreshGitHubIssues: (String?) -> Unit = {},
+    onImportGitHubIssue: (GitHubIssue) -> Unit = {},
 ) {
     var currentTab by rememberSaveable { mutableStateOf(TaskBoardTab.KANBAN) }
     var goalInput by rememberSaveable { mutableStateOf("") }
@@ -352,6 +359,13 @@ fun TaskBoardScreen(
                     onSaveApiKey = onSaveLinearApiKey,
                     onRefresh = onRefreshLinearIssues,
                     onImportIssue = onImportLinearIssue,
+                )
+                TaskBoardTab.GITHUB_ISSUES -> GitHubIssuesContent(
+                    issues = githubIssues,
+                    loading = githubIssuesLoading,
+                    repoName = githubRepoName,
+                    onRefresh = onRefreshGitHubIssues,
+                    onImportIssue = onImportGitHubIssue,
                 )
                 TaskBoardTab.AUDIT -> AuditLogContent(auditLogs = auditLogs)
             }
@@ -2487,6 +2501,298 @@ private fun LinearIssuesContent(
             },
             dismissButton = {
                 TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun GitHubIssuesContent(
+    issues: List<GitHubIssue>,
+    loading: Boolean,
+    repoName: String?,
+    onRefresh: (String?) -> Unit,
+    onImportIssue: (GitHubIssue) -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+    var showRepoDialog by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(BorderStroke(1.dp, borderColor)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (!repoName.isNullOrBlank() || issues.isNotEmpty()) NeoLime else Color(0xFFFF9100)),
+                        )
+                        Text(
+                            text = repoName?.ifBlank { "GITHUB REPO" } ?: "GITHUB REPO",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = "${issues.size} issues available",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { onRefresh(null) }, enabled = !loading) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = NeoLime)
+                        } else {
+                            Icon(Icons.Default.Refresh, "Refresh GitHub issues", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                    Button(
+                        onClick = { showRepoDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.5.dp, NeoBlack),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        Text("CHANGE REPO", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        }
+
+        if (issues.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.Code, null, modifier = Modifier.size(48.dp), tint = NeoLime)
+                    Text("No GitHub Issues Loaded", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "Connect your repository or specify owner/repo to sync open issues into Devon Coder worktrees.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onRefresh(null) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.5.dp, NeoBlack),
+                        ) {
+                            Text("FETCH CURRENT REPO", fontWeight = FontWeight.Black)
+                        }
+                        Button(
+                            onClick = { showRepoDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.5.dp, NeoBlack),
+                        ) {
+                            Text("SPECIFY REPO", fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(issues, key = { "${it.id}-${it.number}" }) { issue ->
+                    val isClosed = issue.state.equals("closed", true)
+                    val statusColor = if (isClosed) Color.Gray else NeoLime
+                    val isUrgent = issue.labels.any { it.contains("urgent", true) || it.contains("critical", true) || it.contains("p0", true) }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.5.dp, borderColor),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f, fill = false),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(NeoLime)
+                                            .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    ) {
+                                        Text("#${issue.number}", fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoBlack)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(statusColor)
+                                            .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(issue.state.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Black, color = if (isClosed) Color.White else NeoBlack)
+                                    }
+                                    if (isUrgent) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFFFF5252))
+                                                .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("CRITICAL", fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                        }
+                                    }
+                                }
+
+                                if (issue.author.isNotBlank()) {
+                                    Text("@${issue.author}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+
+                            Text(
+                                text = issue.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+
+                            if (issue.labels.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    issue.labels.forEach { label ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(
+                                                    when {
+                                                        label.contains("bug", true) -> Color(0xFFFF8A80)
+                                                        label.contains("enhancement", true) || label.contains("feature", true) -> Color(0xFFB388FF)
+                                                        label.contains("doc", true) -> Color(0xFF80D8FF)
+                                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                                    }
+                                                )
+                                                .border(1.dp, borderColor.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 2.dp),
+                                        ) {
+                                            Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = NeoBlack)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (issue.body.isNotBlank()) {
+                                Text(
+                                    text = issue.body,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Branch: issue/${issue.number}",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                Button(
+                                    onClick = { onImportIssue(issue) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, NeoBlack),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp),
+                                ) {
+                                    Icon(Icons.Default.Add, null, Modifier.size(12.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("IMPORT TO SWARM", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRepoDialog) {
+        var tempRepo by remember { mutableStateOf(repoName.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { showRepoDialog = false },
+            title = { Text("GitHub Repository", fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Enter the GitHub repository in 'owner/repository' format (e.g. facebook/react or your user repo):",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = tempRepo,
+                        onValueChange = { tempRepo = it },
+                        label = { Text("Repository (owner/repo)") },
+                        placeholder = { Text("owner/repo") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tempRepo.isNotBlank()) {
+                            onRefresh(tempRepo.trim())
+                            showRepoDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                ) {
+                    Text("FETCH ISSUES", fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRepoDialog = false }) {
                     Text("Cancel")
                 }
             },

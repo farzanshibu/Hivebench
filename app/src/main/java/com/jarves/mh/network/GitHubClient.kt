@@ -25,6 +25,21 @@ data class GitHubRepository(
     val updatedAt: String,
 )
 
+data class GitHubIssue(
+    val id: Long = 0L,
+    val number: Int,
+    val title: String,
+    val body: String = "",
+    val state: String = "open",
+    val htmlUrl: String = "",
+    val author: String = "",
+    val authorAvatarUrl: String = "",
+    val labels: List<String> = emptyList(),
+    val assignee: String? = null,
+    val createdAt: String = "",
+    val updatedAt: String = "",
+)
+
 sealed interface GitHubTokenPoll {
     data class Success(val accessToken: String) : GitHubTokenPoll
     data class Pending(val slowDown: Boolean = false) : GitHubTokenPoll
@@ -119,6 +134,43 @@ class GitHubClient {
                 createdAt = item.optString("created_at", ""),
             )
         }
+    }
+
+    fun listIssues(token: String, repoFullName: String, state: String = "open"): List<GitHubIssue> {
+        val array = getJson("https://api.github.com/repos/$repoFullName/issues?state=$state&per_page=50", token) as JSONArray
+        val issues = mutableListOf<GitHubIssue>()
+        for (index in 0 until array.length()) {
+            val item = array.getJSONObject(index)
+            if (item.has("pull_request")) continue
+
+            val labelsArray = item.optJSONArray("labels")
+            val labelsList = mutableListOf<String>()
+            if (labelsArray != null) {
+                for (j in 0 until labelsArray.length()) {
+                    val labelObj = labelsArray.optJSONObject(j)
+                    val labelName = labelObj?.optString("name") ?: labelsArray.optString(j)
+                    if (labelName.isNotBlank()) labelsList.add(labelName)
+                }
+            }
+
+            issues.add(
+                GitHubIssue(
+                    id = item.optLong("id", 0L),
+                    number = item.getInt("number"),
+                    title = item.getString("title"),
+                    body = item.optString("body", ""),
+                    state = item.optString("state", "open"),
+                    htmlUrl = item.optString("html_url", ""),
+                    author = item.optJSONObject("user")?.optString("login", "").orEmpty(),
+                    authorAvatarUrl = item.optJSONObject("user")?.optString("avatar_url", "").orEmpty(),
+                    labels = labelsList,
+                    assignee = item.optJSONObject("assignee")?.optString("login"),
+                    createdAt = item.optString("created_at", ""),
+                    updatedAt = item.optString("updated_at", ""),
+                )
+            )
+        }
+        return issues
     }
 
     fun createPullRequest(

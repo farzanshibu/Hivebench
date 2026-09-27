@@ -36,6 +36,7 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.ProviderApiClient
 import com.jarves.mh.network.GitHubRepository
+import com.jarves.mh.network.GitHubIssue
 import com.jarves.mh.network.LinearIssue
 import com.jarves.mh.network.LinearClient
 import com.jarves.mh.runtime.ClaudeRuntimeBridge
@@ -288,6 +289,9 @@ data class AppUiState(
     val linearApiKey: String? = null,
     val linearIssues: List<LinearIssue> = emptyList(),
     val linearLoading: Boolean = false,
+    val githubIssues: List<GitHubIssue> = emptyList(),
+    val githubIssuesLoading: Boolean = false,
+    val githubRepoOverride: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -3217,13 +3221,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val unstagedDiffs = gitManager.diff(workspace, guestPath, staged = false).getOrNull().orEmpty()
 
             val token = getGitHubToken()
-            val pullRequests = if (!token.isNullOrBlank()) {
-                val remotes = gitManager.getRemotes(workspace, guestPath).getOrNull().orEmpty()
-                val origin = remotes["origin"].orEmpty()
-                val repoFullName = extractGitHubRepoFullName(origin, project.description)
-                if (!repoFullName.isNullOrBlank()) {
-                    runCatching { gitHubClient.listPullRequests(token, repoFullName) }.getOrNull().orEmpty()
-                } else emptyList()
+            val remotes = gitManager.getRemotes(workspace, guestPath).getOrNull().orEmpty()
+            val origin = remotes["origin"].orEmpty()
+            val repoFullName = _state.value.githubRepoOverride ?: extractGitHubRepoFullName(origin, project.description)
+            val pullRequests = if (!token.isNullOrBlank() && !repoFullName.isNullOrBlank()) {
+                runCatching { gitHubClient.listPullRequests(token, repoFullName) }.getOrNull().orEmpty()
+            } else emptyList()
+            val issues = if (!token.isNullOrBlank() && !repoFullName.isNullOrBlank()) {
+                runCatching { gitHubClient.listIssues(token, repoFullName) }.getOrNull().orEmpty()
             } else emptyList()
 
             withContext(Dispatchers.Main) {
@@ -3237,6 +3242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             gitStagedDiffs = stagedDiffs,
                             gitUnstagedDiffs = unstagedDiffs,
                             gitPullRequests = pullRequests,
+                            githubIssues = if (issues.isNotEmpty() || it.githubIssues.isEmpty()) issues else it.githubIssues,
                             gitOperationRunning = false,
                             gitOperationMessage = null,
                         )
@@ -3913,6 +3919,95 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     it.copy(
                         toastMessage = "Imported [${issue.identifier}] into swarm with worktree $branchName",
+                    )
+                }
+            }
+        }
+    }
+
+    // --- GITHUB ISSUES INTEGRATION ---
+    fun refreshGitHubIssues(customRepo: String? = null) {
+        val project = _state.value.activeProject ?: return
+        val token = getGitHubToken()
+        if (token.isNullOrBlank()) {
+            _state.update { it.copy(toastMessage = "GitHub token not configured. Connect GitHub in settings.") }
+            return
+        }
+        _state.update { it.copy(githubIssuesLoading = true, githubRepoOverride = customRepo ?: it.githubRepoOverride) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val remotes = gitManager.getRemotes(projectWorkspaceRoot(project), projectGuestRoot(project)).getOrNull().orEmpty()
+            val origin = remotes["origin"].orEmpty()
+            val resolvedRepo = customRepo ?: _state.value.githubRepoOverride ?: extractGitHubRepoFullName(origin, project.description)
+            if (resolvedRepo.isNullOrBlank()) {
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(githubIssuesLoading = false, toastMessage = "Specify repository owner/name to fetch issues") }
+                }
+                return@launch
+            }
+            val result = runCatching { gitHubClient.listIssues(token, resolvedRepo) }
+            withContext(Dispatchers.Main) {
+                result.onSuccess { issues ->
+                    _state.update {
+                        it.copy(
+                            githubIssues = issues,
+                            githubIssuesLoading = false,
+                            toastMessage = "Fetched ${issues.size} GitHub issues from $resolvedRepo",
+                        )
+                    }
+                }.onFailure { err ->
+                    _state.update {
+                        it.copy(
+                            githubIssuesLoading = false,
+                            toastMessage = "GitHub issue fetch failed: ${err.message?.take(100)}",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun importGitHubIssueToTask(issue: GitHubIssue) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val guestPath = projectGuestRoot(project)
+        val isUrgent = issue.labels.any { it.contains("urgent", true) || it.contains("critical", true) || it.contains("p0", true) }
+        val isHigh = issue.labels.any { it.contains("bug", true) || it.contains("high", true) || it.contains("p1", true) }
+        val priority = when {
+            isUrgent -> com.jarves.mh.model.TaskPriority.URGENT
+            isHigh -> com.jarves.mh.model.TaskPriority.HIGH
+            else -> com.jarves.mh.model.TaskPriority.MEDIUM
+        }
+        val branchName = "issue/${issue.number}"
+        viewModelScope.launch(Dispatchers.IO) {
+            taskBoardManager.createTask(
+                title = "[#${issue.number}] ${issue.title}",
+                description = "${issue.body}\n\nGitHub Issue: ${issue.htmlUrl}".trim(),
+                priority = priority,
+                assignedAgentId = "devon_coder",
+                assignedAgentName = "Devon Coder",
+                worktreeBranch = branchName,
+            )
+            taskBoardManager.saveToFile(root)
+
+            blackboardMemoryStore.putEntry(
+                key = "github_issue_${issue.number}",
+                category = "REQUIREMENT",
+                value = "Imported GitHub Issue #${issue.number}: ${issue.title}. Assigned to Devon Coder on branch $branchName.",
+                authorAgentId = "system",
+                authorRole = com.jarves.mh.model.AgentRole.GOD_ORCHESTRATOR,
+            )
+            blackboardMemoryStore.saveToFile(root)
+
+            if (gitManager.isGitRepository(root, guestPath)) {
+                worktreeManager.createWorktree(root, guestPath, branchName, branchName)
+            }
+
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+                refreshGitState()
+                _state.update {
+                    it.copy(
+                        toastMessage = "Imported GitHub issue #${issue.number} into swarm on $branchName",
                     )
                 }
             }
