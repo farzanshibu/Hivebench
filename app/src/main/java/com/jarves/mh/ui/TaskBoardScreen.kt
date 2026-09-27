@@ -47,10 +47,12 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -118,6 +120,8 @@ enum class TaskBoardTab(val label: String, val icon: ImageVector) {
     AGENTS("Agents (Swarm)", Icons.Default.SmartToy),
     BLACKBOARD("Blackboard", Icons.Default.Hub),
     SCHEDULE("Scheduler", Icons.Default.Schedule),
+    SKILLS("Skills", Icons.Default.Tune),
+    REVIEWS("Diff Review", Icons.Default.Search),
     AUDIT("Audit Log", Icons.Default.History),
 }
 
@@ -131,6 +135,8 @@ fun TaskBoardScreen(
     circuitBreaker: CircuitBreakerState,
     inboxMessages: List<AgentInboxMessage>,
     scheduledTasks: List<com.jarves.mh.model.ScheduledTask> = emptyList(),
+    skills: List<com.jarves.mh.skills.SkillDefinition> = emptyList(),
+    diffReviews: List<com.jarves.mh.review.DiffReviewSession> = emptyList(),
     onDecomposeGoal: (String) -> Unit,
     onCreateTask: (String, String, TaskPriority, String?, List<String>) -> Unit,
     onMoveTaskStatus: (String, TaskStatus) -> Unit,
@@ -143,12 +149,17 @@ fun TaskBoardScreen(
     onDeleteSchedule: (String) -> Unit = {},
     onMergeWorktree: (String) -> Unit = {},
     onRemoveWorktree: (String) -> Unit = {},
+    onToggleSkill: (String) -> Unit = {},
+    onCreateSkill: (String, String, com.jarves.mh.skills.SkillCategory, String) -> Unit = { _, _, _, _ -> },
+    onToggleAnnotationResolved: (String) -> Unit = {},
+    onRunAutomatedReview: (String) -> Unit = {},
 ) {
     var currentTab by rememberSaveable { mutableStateOf(TaskBoardTab.KANBAN) }
     var goalInput by rememberSaveable { mutableStateOf("") }
     var showNewTaskDialog by rememberSaveable { mutableStateOf(false) }
     var showAddFactDialog by rememberSaveable { mutableStateOf(false) }
     var showNewScheduleDialog by rememberSaveable { mutableStateOf(false) }
+    var showNewSkillDialog by rememberSaveable { mutableStateOf(false) }
     var selectedAgentForInbox by remember { mutableStateOf<AgentInstance?>(null) }
     var selectedTaskForDetail by remember { mutableStateOf<AgentTask?>(null) }
     var selectedTaskForWorktreeReview by remember { mutableStateOf<AgentTask?>(null) }
@@ -316,6 +327,16 @@ fun TaskBoardScreen(
                     onToggleSchedule = onToggleSchedule,
                     onDeleteSchedule = onDeleteSchedule,
                 )
+                TaskBoardTab.SKILLS -> SkillsContent(
+                    skills = skills,
+                    onToggleSkill = onToggleSkill,
+                    onAddNewSkill = { showNewSkillDialog = true },
+                )
+                TaskBoardTab.REVIEWS -> DiffReviewsContent(
+                    sessions = diffReviews,
+                    onToggleResolved = onToggleAnnotationResolved,
+                    onRunAutomatedReview = { onRunAutomatedReview("main") },
+                )
                 TaskBoardTab.AUDIT -> AuditLogContent(auditLogs = auditLogs)
             }
         }
@@ -399,6 +420,17 @@ fun TaskBoardScreen(
             onCreate = { title, desc, interval, isRec, agentId ->
                 onCreateSchedule(title, desc, interval, isRec, agentId)
                 showNewScheduleDialog = false
+            },
+        )
+    }
+
+    // Create Custom Skill Dialog
+    if (showNewSkillDialog) {
+        CreateSkillDialog(
+            onDismiss = { showNewSkillDialog = false },
+            onCreate = { name, desc, cat, instructions ->
+                onCreateSkill(name, desc, cat, instructions)
+                showNewSkillDialog = false
             },
         )
     }
@@ -1749,3 +1781,434 @@ private fun CreateScheduleDialog(
         },
     )
 }
+
+@Composable
+private fun SkillsContent(
+    skills: List<com.jarves.mh.skills.SkillDefinition>,
+    onToggleSkill: (String) -> Unit,
+    onAddNewSkill: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("SWARM SKILL REGISTRY", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                Text(
+                    "Dynamic capabilities & MCP tools equipped by agents",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Button(
+                onClick = onAddNewSkill,
+                colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.5.dp, NeoBlack),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("NEW SKILL", fontSize = 10.sp, fontWeight = FontWeight.Black)
+            }
+        }
+        HorizontalDivider(color = borderColor)
+
+        if (skills.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text("No skills registered", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(skills, key = { it.id }) { skill ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.5.dp, borderColor),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(skill.category.iconEmoji, fontSize = 16.sp)
+                                    Column {
+                                        Text(skill.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            skill.category.label.uppercase(),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = NeoLime,
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = skill.enabled,
+                                    onCheckedChange = { onToggleSkill(skill.id) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = NeoBlack,
+                                        checkedTrackColor = NeoLime,
+                                    ),
+                                )
+                            }
+
+                            if (skill.description.isNotBlank()) {
+                                Text(
+                                    skill.description,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+
+                            // Instructions box
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    skill.instructions,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(8.dp),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            // Required tools pills & author
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    items(skill.requiredTools) { tool ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .border(1.dp, borderColor, RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 2.dp),
+                                        ) {
+                                            Text(tool, fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    skill.author,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiffReviewsContent(
+    sessions: List<com.jarves.mh.review.DiffReviewSession>,
+    onToggleResolved: (String) -> Unit,
+    onRunAutomatedReview: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("DIFF REVIEWS & ANNOTATIONS", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                Text(
+                    "Automated analysis by Rhea Reviewer + human feedback",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Button(
+                onClick = onRunAutomatedReview,
+                colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.5.dp, NeoBlack),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("RUN REVIEW", fontSize = 10.sp, fontWeight = FontWeight.Black)
+            }
+        }
+        HorizontalDivider(color = borderColor)
+
+        if (sessions.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🔍", fontSize = 36.sp)
+                    Text("No Code Reviews Yet", fontWeight = FontWeight.Black, fontSize = 14.sp)
+                    Text(
+                        "Click 'RUN REVIEW' to have Rhea Reviewer audit diffs for security risks, exceptions, and code quality.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(sessions, key = { it.id }) { sess ->
+                    val statusColor = when (sess.status) {
+                        com.jarves.mh.review.ReviewStatus.APPROVED -> Color(0xFF00E676)
+                        com.jarves.mh.review.ReviewStatus.CHANGES_REQUESTED -> Color(0xFFFF5252)
+                        com.jarves.mh.review.ReviewStatus.PENDING -> Color(0xFFFFD600)
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.5.dp, borderColor),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("🌿", fontSize = 14.sp)
+                                    Text(
+                                        "${sess.worktreeBranch} -> ${sess.targetBranch}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(statusColor.copy(alpha = 0.2f))
+                                        .border(1.dp, statusColor, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Text(sess.status.label.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Black, color = if (isDark) statusColor else NeoBlack)
+                                }
+                            }
+
+                            if (sess.summary.isNotBlank()) {
+                                Text(sess.summary, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            HorizontalDivider(color = borderColor.copy(alpha = 0.5f))
+
+                            Text("FINDINGS & INLINE ANNOTATIONS (${sess.annotations.size})", fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoLime)
+
+                            sess.annotations.forEach { ann ->
+                                val badgeColor = Color(ann.type.badgeColor)
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, if (ann.resolved) borderColor.copy(alpha = 0.3f) else badgeColor),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Text(ann.authorAvatar, fontSize = 12.sp)
+                                                Text(
+                                                    "${ann.filePath}:${ann.lineNumber}",
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(badgeColor)
+                                                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                                                ) {
+                                                    Text(ann.type.label, fontSize = 8.sp, fontWeight = FontWeight.Black, color = NeoBlack)
+                                                }
+                                                Spacer(Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(if (ann.resolved) NeoLime else MaterialTheme.colorScheme.background)
+                                                        .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                                        .clickable { onToggleResolved(ann.id) }
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                                ) {
+                                                    Text(
+                                                        if (ann.resolved) "RESOLVED ✓" else "RESOLVE",
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = if (ann.resolved) NeoBlack else MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Text(ann.comment, fontSize = 11.sp)
+
+                                        if (!ann.suggestedPatch.isNullOrBlank()) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.background,
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(
+                                                    ann.suggestedPatch,
+                                                    fontSize = 9.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = NeoLime,
+                                                    modifier = Modifier.padding(6.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateSkillDialog(
+    onDismiss: () -> Unit,
+    onCreate: (name: String, desc: String, category: com.jarves.mh.skills.SkillCategory, instructions: String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var instructions by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(com.jarves.mh.skills.SkillCategory.DEBUGGING) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Create Custom Skill", fontWeight = FontWeight.Black, fontSize = 16.sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Skill Name *") },
+                    placeholder = { Text("E.g. GraphQL Query Validator") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Text("CATEGORY", fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoLime)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(com.jarves.mh.skills.SkillCategory.entries) { cat ->
+                        val isSelected = cat == selectedCategory
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) NeoLime else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { selectedCategory = cat }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                "${cat.iconEmoji} ${cat.label}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) NeoBlack else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    placeholder = { Text("Summary of capability...") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = instructions,
+                    onValueChange = { instructions = it },
+                    label = { Text("System Instructions / Guidelines *") },
+                    placeholder = { Text("Specific instructions for agents when applying this skill...") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && instructions.isNotBlank()) {
+                        onCreate(name.trim(), description.trim(), selectedCategory, instructions.trim())
+                    }
+                },
+                enabled = name.isNotBlank() && instructions.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+            ) {
+                Text("ADD SKILL", fontWeight = FontWeight.Black)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+

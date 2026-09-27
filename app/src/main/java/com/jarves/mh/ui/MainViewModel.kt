@@ -55,6 +55,21 @@ import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.AndroidAppInstaller
 import com.jarves.mh.update.AppUpdateInfo
 import com.jarves.mh.update.AppUpdater
+import com.jarves.mh.skills.SkillDefinition
+import com.jarves.mh.skills.SkillCategory
+import com.jarves.mh.skills.McpToolDefinition
+import com.jarves.mh.skills.SkillRegistry
+import com.jarves.mh.skills.McpToolManager
+import com.jarves.mh.review.DiffReviewSession
+import com.jarves.mh.review.LineDiffAnnotation
+import com.jarves.mh.review.AnnotationType
+import com.jarves.mh.review.DiffReviewManager
+import com.jarves.mh.ssh.SshServerProfile
+import com.jarves.mh.ssh.SshAuthType
+import com.jarves.mh.ssh.SshRuntimeManager
+import com.jarves.mh.model.CustomAgentTemplate
+import com.jarves.mh.model.AgentRuntimeType
+import com.jarves.mh.model.AgentQuotaUsage
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.UnknownHostException
@@ -261,6 +276,13 @@ data class AppUiState(
     val swarmInboxMessages: List<com.jarves.mh.model.AgentInboxMessage> = emptyList(),
     val scheduledTasks: List<com.jarves.mh.model.ScheduledTask> = emptyList(),
     val designModePromptDraft: String? = null,
+    val skills: List<SkillDefinition> = emptyList(),
+    val mcpTools: List<McpToolDefinition> = emptyList(),
+    val diffReviews: List<DiffReviewSession> = emptyList(),
+    val sshProfiles: List<SshServerProfile> = emptyList(),
+    val activeSshProfile: SshServerProfile? = null,
+    val customAgentTemplates: List<CustomAgentTemplate> = emptyList(),
+    val agentQuotaUsages: List<AgentQuotaUsage> = emptyList(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -276,6 +298,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val blackboardMemoryStore = com.jarves.mh.orchestrator.BlackboardMemoryStore()
     val agentInboxManager = com.jarves.mh.orchestrator.AgentInboxManager()
     val godOrchestrator = com.jarves.mh.orchestrator.GodOrchestrator(taskBoardManager, agentInboxManager, blackboardMemoryStore)
+    var skillRegistry = SkillRegistry(File(application.filesDir, "default_workspace"))
+    var mcpToolManager = McpToolManager(File(application.filesDir, "default_workspace"))
+    var diffReviewManager = DiffReviewManager(File(application.filesDir, "default_workspace"))
+    var sshRuntimeManager = SshRuntimeManager(File(application.filesDir, "default_workspace"))
     private val gitHubClient = com.jarves.mh.network.GitHubClient()
     private val antigravityRuntime = AntigravityRuntimeBridge(
         application,
@@ -3462,6 +3488,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadAndRefreshOrchestrator(project: Project) {
         val root = projectWorkspaceRoot(project)
+        skillRegistry = SkillRegistry(root)
+        mcpToolManager = McpToolManager(root)
+        diffReviewManager = DiffReviewManager(root)
+        sshRuntimeManager = SshRuntimeManager(root)
         viewModelScope.launch(Dispatchers.IO) {
             taskBoardManager.loadFromFile(root)
             blackboardMemoryStore.loadFromFile(root)
@@ -3482,6 +3512,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 circuitBreakerState = godOrchestrator.circuitBreaker,
                 swarmInboxMessages = agentInboxManager.getAllMessages(),
                 scheduledTasks = godOrchestrator.getAllScheduledTasks(),
+                skills = skillRegistry.getAllSkills(),
+                mcpTools = mcpToolManager.getRegisteredTools(),
+                diffReviews = diffReviewManager.getAllSessions(),
+                sshProfiles = sshRuntimeManager.getProfiles(),
+                activeSshProfile = sshRuntimeManager.getActiveProfile(),
             )
         }
     }
@@ -3653,6 +3688,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             refreshGitState()
+        }
+    }
+
+    // --- SKILLS & MCP ---
+    fun toggleSkill(skillId: String) {
+        val newState = skillRegistry.toggleSkill(skillId)
+        _state.update { it.copy(skills = skillRegistry.getAllSkills()) }
+    }
+
+    fun addCustomSkill(name: String, description: String, category: SkillCategory, instructions: String) {
+        skillRegistry.addCustomSkill(name, description, category, instructions)
+        _state.update {
+            it.copy(
+                skills = skillRegistry.getAllSkills(),
+                toastMessage = "Skill '$name' added to swarm registry",
+            )
+        }
+    }
+
+    fun deleteCustomSkill(skillId: String) {
+        skillRegistry.deleteCustomSkill(skillId)
+        _state.update { it.copy(skills = skillRegistry.getAllSkills()) }
+    }
+
+    // --- DIFF REVIEWS & ANNOTATIONS ---
+    fun addDiffAnnotation(
+        worktreeBranch: String,
+        filePath: String,
+        lineNumber: Int,
+        author: String,
+        type: AnnotationType,
+        comment: String,
+    ) {
+        diffReviewManager.addAnnotation(
+            worktreeBranch = worktreeBranch,
+            filePath = filePath,
+            lineNumber = lineNumber,
+            author = author,
+            authorAvatar = if (author.contains("Reviewer", true)) "🔍" else "👤",
+            type = type,
+            comment = comment,
+        )
+        _state.update { it.copy(diffReviews = diffReviewManager.getAllSessions()) }
+    }
+
+    fun toggleDiffAnnotationResolved(annotationId: String) {
+        diffReviewManager.toggleAnnotationResolved(annotationId)
+        _state.update { it.copy(diffReviews = diffReviewManager.getAllSessions()) }
+    }
+
+    fun runAutomatedReviewForWorktree(worktreeBranch: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val unstaged = _state.value.gitUnstagedDiffs.map { it.path to it.diff }
+            val staged = _state.value.gitStagedDiffs.map { it.path to it.diff }
+            val allDiffs = (unstaged + staged).distinctBy { it.first }
+            diffReviewManager.runAutomatedReview(worktreeBranch, allDiffs)
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        diffReviews = diffReviewManager.getAllSessions(),
+                        toastMessage = "Rhea Reviewer completed automated review pass.",
+                    )
+                }
+            }
+        }
+    }
+
+    // --- SSH RUNTIME ---
+    fun addSshProfile(
+        name: String,
+        host: String,
+        port: Int,
+        user: String,
+        authType: SshAuthType,
+        remotePath: String,
+    ) {
+        sshRuntimeManager.addProfile(name, host, port, user, authType, remotePath)
+        _state.update {
+            it.copy(
+                sshProfiles = sshRuntimeManager.getProfiles(),
+                toastMessage = "SSH profile '$name' created.",
+            )
+        }
+    }
+
+    fun setActiveSshProfile(profileId: String?) {
+        sshRuntimeManager.setActiveProfile(profileId)
+        _state.update {
+            it.copy(
+                activeSshProfile = sshRuntimeManager.getActiveProfile(),
+                toastMessage = if (profileId != null) "Remote SSH backend selected" else "Switched to local PRoot backend",
+            )
+        }
+    }
+
+    fun deleteSshProfile(profileId: String) {
+        sshRuntimeManager.deleteProfile(profileId)
+        _state.update {
+            it.copy(
+                sshProfiles = sshRuntimeManager.getProfiles(),
+                activeSshProfile = sshRuntimeManager.getActiveProfile(),
+            )
+        }
+    }
+
+    // --- DYNAMIC AGENTS & TEMPLATES ---
+    fun createCustomAgentTemplate(
+        name: String,
+        roleTitle: String,
+        runtimeType: AgentRuntimeType,
+        systemPrompt: String,
+        preferredModel: String,
+        preferredEffort: String,
+    ) {
+        val template = CustomAgentTemplate(
+            name = name,
+            roleTitle = roleTitle,
+            runtimeType = runtimeType,
+            systemPrompt = systemPrompt,
+            preferredModel = preferredModel,
+            preferredEffort = preferredEffort,
+        )
+        _state.update {
+            it.copy(
+                customAgentTemplates = it.customAgentTemplates + template,
+                toastMessage = "Dynamic agent '$name' registered.",
+            )
         }
     }
 

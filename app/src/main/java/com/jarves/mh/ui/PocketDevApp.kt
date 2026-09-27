@@ -399,6 +399,13 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onToggleSchedule = viewModel::toggleScheduledTask,
             onDeleteSchedule = viewModel::deleteScheduledTask,
             onMergeWorktree = viewModel::mergeWorktreeBranch,
+            onToggleSkill = viewModel::toggleSkill,
+            onCreateSkill = viewModel::addCustomSkill,
+            onToggleAnnotationResolved = viewModel::toggleDiffAnnotationResolved,
+            onRunAutomatedReview = viewModel::runAutomatedReviewForWorktree,
+            onAddSshProfile = viewModel::addSshProfile,
+            onSetActiveSshProfile = viewModel::setActiveSshProfile,
+            onDeleteSshProfile = viewModel::deleteSshProfile,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -4042,8 +4049,14 @@ private fun WorkspaceScreen(
     onSetEffort: (String) -> Unit = {},
     onCreateSchedule: (String, String, Int, Boolean, String) -> Unit = { _, _, _, _, _ -> },
     onToggleSchedule: (String) -> Unit = {},
-    onDeleteSchedule: (String) -> Unit = {},
     onMergeWorktree: (String) -> Unit = {},
+    onToggleSkill: (String) -> Unit = {},
+    onCreateSkill: (String, String, com.jarves.mh.skills.SkillCategory, String) -> Unit = { _, _, _, _ -> },
+    onToggleAnnotationResolved: (String) -> Unit = {},
+    onRunAutomatedReview: (String) -> Unit = {},
+    onAddSshProfile: (String, String, Int, String, com.jarves.mh.ssh.SshAuthType, String) -> Unit = { _, _, _, _, _, _ -> },
+    onSetActiveSshProfile: (String?) -> Unit = {},
+    onDeleteSshProfile: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4109,6 +4122,7 @@ private fun WorkspaceScreen(
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
     var showChats by rememberSaveable { mutableStateOf(false) }
+    var showSshDialog by rememberSaveable { mutableStateOf(false) }
     val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }
 
     // If a file is open, show the FileViewerScreen on top
@@ -4145,6 +4159,22 @@ private fun WorkspaceScreen(
                 showChats = false
                 selectedTab = WorkspaceTab.CHAT
             },
+        )
+    }
+
+    if (showSshDialog) {
+        SshRuntimeDialog(
+            activeProfile = state.activeSshProfile,
+            profiles = state.sshProfiles,
+            onDismiss = { showSshDialog = false },
+            onSelectProfile = { profileId ->
+                onSetActiveSshProfile(profileId)
+                showSshDialog = false
+            },
+            onAddProfile = { name, host, port, user, authType, remotePath ->
+                onAddSshProfile(name, host, port, user, authType, remotePath)
+            },
+            onDeleteProfile = onDeleteSshProfile,
         )
     }
     state.pendingTerminalCommand?.let { command ->
@@ -4215,6 +4245,30 @@ private fun WorkspaceScreen(
                         ) {
                             if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             else Icon(Icons.Default.PlayArrow, "Build and run Android app")
+                        }
+                    }
+                    val isRemoteSsh = state.activeSshProfile != null
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isRemoteSsh) NeoLime.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, if (isRemoteSsh) NeoLime else if (androidx.compose.foundation.isSystemInDarkTheme()) NeoDarkBorder else NeoBlack, RoundedCornerShape(6.dp))
+                            .clickable { showSshDialog = true }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(if (isRemoteSsh) Color(0xFF00E676) else NeoLime, CircleShape),
+                            )
+                            Text(
+                                if (isRemoteSsh) "SSH" else "PROOT",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (isRemoteSsh) NeoLime else MaterialTheme.colorScheme.onSurface,
+                            )
                         }
                     }
                     IconButton(onClick = { showChats = true }) { Icon(Icons.Default.History, "Project chats") }
@@ -4335,6 +4389,12 @@ private fun WorkspaceScreen(
                     onDeleteSchedule = onDeleteSchedule,
                     onMergeWorktree = onMergeWorktree,
                     onRemoveWorktree = onRemoveWorktree,
+                    skills = state.skills,
+                    diffReviews = state.diffReviews,
+                    onToggleSkill = onToggleSkill,
+                    onCreateSkill = onCreateSkill,
+                    onToggleAnnotationResolved = onToggleAnnotationResolved,
+                    onRunAutomatedReview = onRunAutomatedReview,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4464,6 +4524,193 @@ private fun ChatSwitcherDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun SshRuntimeDialog(
+    activeProfile: com.jarves.mh.ssh.SshServerProfile?,
+    profiles: List<com.jarves.mh.ssh.SshServerProfile>,
+    onDismiss: () -> Unit,
+    onSelectProfile: (String?) -> Unit,
+    onAddProfile: (String, String, Int, String, com.jarves.mh.ssh.SshAuthType, String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+    var showAddForm by remember { mutableStateOf(false) }
+
+    var serverName by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("22") }
+    var user by remember { mutableStateOf("root") }
+    var remotePath by remember { mutableStateOf("~/workspace") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🖥️", fontSize = 18.sp)
+                Spacer(Modifier.width(8.dp))
+                Text("Execution Runtime Backend", fontWeight = FontWeight.Black, fontSize = 16.sp)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "PocketDev runs a local Linux PRoot environment on Android by default. You can also connect to a remote SSH server for high-performance builds and agent execution.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // Option 1: Local PRoot Linux
+                val isLocalActive = activeProfile == null
+                Surface(
+                    color = if (isLocalActive) NeoLime.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(if (isLocalActive) 2.dp else 1.dp, if (isLocalActive) NeoLime else borderColor),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectProfile(null) },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(8.dp).background(if (isLocalActive) NeoLime else MaterialTheme.colorScheme.outline, CircleShape))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Local Linux (PRoot on Android)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Text("Default · Fully offline · Ubuntu userspace", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                        }
+                        if (isLocalActive) {
+                            Text("ACTIVE", fontSize = 9.sp, fontWeight = FontWeight.Black, color = if (isDark) NeoLime else NeoBlack)
+                        }
+                    }
+                }
+
+                // Configured Remote SSH Profiles
+                Text("REMOTE SSH SERVERS (${profiles.size})", fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoLime)
+
+                profiles.forEach { p ->
+                    val isActive = p.id == activeProfile?.id
+                    Surface(
+                        color = if (isActive) NeoLime.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(if (isActive) 2.dp else 1.dp, if (isActive) NeoLime else borderColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectProfile(p.id) },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(p.name, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("${p.user}@${p.host}:${p.port}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Workspace: ${p.remoteWorkspacePath}", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isActive) {
+                                    Text("ACTIVE", fontSize = 9.sp, fontWeight = FontWeight.Black, color = if (isDark) NeoLime else NeoBlack)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                IconButton(onClick = { onDeleteProfile(p.id) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showAddForm) {
+                    HorizontalDivider(color = borderColor)
+                    Text("ADD REMOTE SERVER", fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoLime)
+                    OutlinedTextField(
+                        value = serverName,
+                        onValueChange = { serverName = it },
+                        label = { Text("Server Name *") },
+                        placeholder = { Text("E.g. Home Lab / AWS EC2") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = host,
+                            onValueChange = { host = it },
+                            label = { Text("Host / IP *") },
+                            singleLine = true,
+                            modifier = Modifier.weight(2f),
+                        )
+                        OutlinedTextField(
+                            value = port,
+                            onValueChange = { port = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Port") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = user,
+                        onValueChange = { user = it },
+                        label = { Text("Username") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = remotePath,
+                        onValueChange = { remotePath = it },
+                        label = { Text("Remote Workspace Path") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = {
+                            if (serverName.isNotBlank() && host.isNotBlank()) {
+                                onAddProfile(
+                                    serverName.trim(),
+                                    host.trim(),
+                                    port.toIntOrNull() ?: 22,
+                                    user.trim(),
+                                    com.jarves.mh.ssh.SshAuthType.PASSWORD,
+                                    remotePath.trim(),
+                                )
+                                showAddForm = false
+                                serverName = ""
+                                host = ""
+                            }
+                        },
+                        enabled = serverName.isNotBlank() && host.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("SAVE SERVER", fontWeight = FontWeight.Black)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { showAddForm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("ADD SSH SERVER")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
     )
 }
 
