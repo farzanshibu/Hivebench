@@ -2,59 +2,88 @@ package com.jarves.mh.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
-val PocketOrange = Color(0xFFF28C52)
-val PocketBlue = Color(0xFF8EA8FF)
-val PocketGreen = Color(0xFF69D69E)
-val PocketBackground = Color(0xFF0B0E14)
-val PocketSurface = Color(0xFF131821)
-val PocketSurfaceVariant = Color(0xFF1B222D)
-val PocketOutline = Color(0xFF2A3240)
+// ── Re-export Neobrutal tokens for seamless application-wide adoption ──
+val PocketLime = NeoLime
+val PocketOrange = NeoLime // Replaced brand orange with Neobrutal Lime Green accent!
+val PocketBlue = NeoCyan
+val PocketGreen = NeoLime
+val PocketBackground = Color(0xFF0D0F12)
+val PocketSurface = Color(0xFF15181E)
+val PocketSurfaceVariant = Color(0xFF1F242D)
+val PocketOutline = Color(0xFF384152)
 
 private val DarkColors = darkColorScheme(
-    primary = PocketOrange,
-    onPrimary = Color(0xFF241107),
-    primaryContainer = Color(0xFF42281D),
-    onPrimaryContainer = Color(0xFFFFDDCC),
-    secondary = PocketBlue,
-    onSecondary = Color(0xFF001F58),
-    tertiary = PocketGreen,
-    onTertiary = Color(0xFF00391E),
-    background = PocketBackground,
-    onBackground = Color(0xFFE6EDF3),
-    surface = PocketSurface,
-    onSurface = Color(0xFFE6EDF3),
-    surfaceVariant = PocketSurfaceVariant,
-    onSurfaceVariant = Color(0xFF9AA0A6),
-    outline = PocketOutline,
-    outlineVariant = Color(0xFF333B4A),
+    primary = NeoLime,
+    onPrimary = NeoBlack,
+    primaryContainer = Color(0xFF243B06),
+    onPrimaryContainer = Color(0xFFD9FF66),
+    secondary = NeoCyan,
+    onSecondary = NeoBlack,
+    secondaryContainer = Color(0xFF0F2D3D),
+    onSecondaryContainer = Color(0xFFBAE6FD),
+    tertiary = NeoPink,
+    onTertiary = NeoBlack,
+    tertiaryContainer = Color(0xFF3D141D),
+    onTertiaryContainer = Color(0xFFFECDD3),
+    background = Color(0xFF0D0F12),
+    onBackground = Color(0xFFF8FAFC),
+    surface = Color(0xFF15181E),
+    onSurface = Color(0xFFF8FAFC),
+    surfaceVariant = Color(0xFF1F242D),
+    onSurfaceVariant = Color(0xFF94A3B8),
+    outline = NeoDarkBorder,
+    outlineVariant = Color(0xFF252C37),
+    error = Color(0xFFF87171),
+    onError = NeoBlack,
+    errorContainer = Color(0xFF3B1214),
+    onErrorContainer = Color(0xFFFECACA),
 )
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFFD85A20),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFFFE0D2),
-    onPrimaryContainer = Color(0xFF451A08),
-    secondary = Color(0xFF3366CC),
-    onSecondary = Color(0xFFFFFFFF),
-    tertiary = Color(0xFF1B8A5A),
-    onTertiary = Color(0xFFFFFFFF),
-    background = Color(0xFFF6F8FA),
-    onBackground = Color(0xFF1F2328),
+    primary = NeoLime,
+    onPrimary = NeoBlack,
+    primaryContainer = Color(0xFFE5FAB3),
+    onPrimaryContainer = Color(0xFF142404),
+    secondary = NeoCyan,
+    onSecondary = NeoBlack,
+    secondaryContainer = Color(0xFFE0F2FE),
+    onSecondaryContainer = Color(0xFF0369A1),
+    tertiary = NeoPink,
+    onTertiary = NeoBlack,
+    tertiaryContainer = Color(0xFFFFE4E6),
+    onTertiaryContainer = Color(0xFFBE123C),
+    background = Color(0xFFF5F6F0),
+    onBackground = NeoBlack,
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1F2328),
-    surfaceVariant = Color(0xFFEAEFF5),
-    onSurfaceVariant = Color(0xFF57606A),
-    outline = Color(0xFFD0D7DE),
-    outlineVariant = Color(0xFFD8DEE4),
+    onSurface = NeoBlack,
+    surfaceVariant = Color(0xFFE8ECE2),
+    onSurfaceVariant = Color(0xFF475569),
+    outline = NeoBlack,
+    outlineVariant = Color(0xFF2D333B),
+    error = Color(0xFFEF4444),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF991B1B),
+)
+
+private val NeoShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
 enum class AppThemeMode { SYSTEM, DARK, LIGHT }
@@ -79,6 +108,7 @@ fun PocketTheme(themeMode: AppThemeMode = AppThemeMode.SYSTEM, content: @Composa
 
     MaterialTheme(
         colorScheme = if (isDark) DarkColors else LightColors,
+        shapes = NeoShapes,
         content = content,
     )
 }

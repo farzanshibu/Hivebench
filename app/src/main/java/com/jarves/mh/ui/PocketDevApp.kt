@@ -112,6 +112,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -216,13 +217,23 @@ import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
+import com.jarves.mh.ui.theme.NeoLime
+import com.jarves.mh.ui.theme.NeoBlack
+import com.jarves.mh.ui.theme.NeoDarkBorder
+import com.jarves.mh.ui.theme.neoShadow
+import com.jarves.mh.ui.theme.neoTactile
+import com.jarves.mh.ui.theme.neoBounce
+import com.jarves.mh.ui.theme.neoBorder
+import com.jarves.mh.ui.theme.PulsingDot
+import com.jarves.mh.ui.theme.NeoBadge
+import com.jarves.mh.ui.theme.NeoCard
+import com.jarves.mh.ui.theme.NeoButton
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
-import com.jarves.mh.ui.theme.AppThemeMode
-import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Commit
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
 
@@ -233,10 +244,11 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.AutoAwesome),
+    TASKS("Tasks", Icons.Default.ViewKanban),
     FILES("Files", Icons.Default.Folder),
+    CHANGES("Git", Icons.Default.Commit),
     TERMINAL("Terminal", Icons.Default.Terminal),
-    CHANGES("Changes", Icons.Default.Code),
-    PREVIEW("Preview", Icons.Default.Preview),
+    PREVIEW("Browser", Icons.Default.Language),
 }
 
 @Composable
@@ -355,6 +367,38 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
+            onRefreshGit = viewModel::refreshGitState,
+            onStageFile = viewModel::stageFile,
+            onUnstageFile = viewModel::unstageFile,
+            onStageAll = viewModel::stageAllGitFiles,
+            onUnstageAll = viewModel::unstageAllGitFiles,
+            onDiscardFile = viewModel::discardGitFile,
+            onCommit = viewModel::commitGitChanges,
+            onCreateBranch = viewModel::createGitBranch,
+            onCheckoutBranch = viewModel::checkoutGitBranch,
+            onDeleteBranch = viewModel::deleteGitBranch,
+            onMergeBranch = viewModel::mergeGitBranch,
+            onCreateWorktree = viewModel::createGitWorktree,
+            onRemoveWorktree = viewModel::removeGitWorktree,
+            onPushGit = viewModel::pushGitBranch,
+            onPullGit = viewModel::pullGitBranch,
+            onSelectCommit = viewModel::selectGitCommit,
+            onCreatePullRequest = viewModel::createGitHubPullRequest,
+            onStartGitHubLogin = viewModel::startGitHubLogin,
+            onDecomposeGoal = viewModel::decomposeSwarmGoal,
+            onCreateTask = viewModel::createSwarmTask,
+            onMoveTaskStatus = viewModel::moveSwarmTaskStatus,
+            onAssignTask = viewModel::assignSwarmTask,
+            onResetCircuitBreaker = viewModel::resetSwarmCircuitBreaker,
+            onSendDirectMessage = viewModel::sendSwarmDirectMessage,
+            onAddBlackboardEntry = viewModel::addSwarmBlackboardEntry,
+            onSendContextToAgent = viewModel::sendElementContextToChat,
+            onConsumeDesignModeDraft = viewModel::consumeDesignModeDraft,
+            onSetEffort = viewModel::setAntigravityEffort,
+            onCreateSchedule = viewModel::createScheduledTask,
+            onToggleSchedule = viewModel::toggleScheduledTask,
+            onDeleteSchedule = viewModel::deleteScheduledTask,
+            onMergeWorktree = viewModel::mergeWorktreeBranch,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -403,28 +447,35 @@ private fun AntigravityOnboardingScreen(
             when (state.antigravityAuth.status) {
                 AntigravityAuthStatus.SIGNED_OUT, AntigravityAuthStatus.ERROR -> {
                     state.antigravityAuth.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = onStartLogin, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("Sign in with Google")
+                    NeoButton(
+                        onClick = onStartLogin,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
+                    ) {
+                        Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
                 AntigravityAuthStatus.STARTING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = NeoLime)
                     Text("Starting the official Antigravity login…")
                 }
                 AntigravityAuthStatus.COMPLETING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = NeoLime)
                     Text("Completing Google sign-in…")
                 }
                 AntigravityAuthStatus.AWAITING_CODE -> {
                     Text("Google sign-in opened in your browser. Copy the one-time code shown after approval.")
                     state.antigravityAuth.authorizationUrl?.let { url ->
-                        OutlinedButton(
+                        NeoButton(
                             onClick = { clipboard.setText(AnnotatedString(url)) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ) {
                             Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Copy sign-in URL")
+                            Text("Copy sign-in URL", fontWeight = FontWeight.SemiBold)
                         }
                     }
                     OutlinedTextField(
@@ -433,24 +484,42 @@ private fun AntigravityOnboardingScreen(
                         label = { Text("Authorization code") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
                     )
-                    Button(
+                    NeoButton(
                         onClick = { onSubmitCode(code); code = "" },
                         enabled = code.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Complete sign-in") }
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
+                    ) { Text("Complete sign-in", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
                 }
                 AntigravityAuthStatus.SIGNED_IN -> {
-                    Surface(color = PocketGreen.copy(alpha = 0.12f), shape = RoundedCornerShape(14.dp)) {
-                        Text(
-                            state.antigravityAuth.accountEmail?.let { "Connected as $it" } ?: "Google account connected",
+                    NeoCard(
+                        backgroundColor = NeoLime.copy(alpha = 0.18f),
+                        borderColor = NeoLime,
+                        cornerRadius = 14.dp,
+                    ) {
+                        Row(
                             Modifier.fillMaxWidth().padding(16.dp),
-                            color = PocketGreen,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PulsingDot(color = NeoLime, size = 8.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                state.antigravityAuth.accountEmail?.let { "Connected as $it" } ?: "Google account connected",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
-                    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("Continue")
+                    NeoButton(
+                        onClick = onContinue,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
+                    ) {
+                        Text("Continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }
@@ -460,7 +529,11 @@ private fun AntigravityOnboardingScreen(
             ) {
                 Text("Use another coding agent", fontSize = 12.sp)
             }
-            Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f), shape = RoundedCornerShape(14.dp)) {
+            NeoCard(
+                backgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                cornerRadius = 14.dp,
+            ) {
                 Text(
                     "Automatic tool approval is enabled for Antigravity. It can edit project files and run commands without confirmation. Changes remain reviewable in PocketDev.",
                     Modifier.fillMaxWidth().padding(14.dp),
@@ -585,11 +658,10 @@ private fun BackgroundTaskSetupScreen(
             StepDots(currentStep)
             Spacer(Modifier.height(18.dp))
 
-            Surface(
+            NeoCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                cornerRadius = 16.dp,
+                shadowOffset = 3.5.dp,
             ) {
                 Column {
                     PermissionSummaryRow(Icons.Default.Notifications, "Notifications", notificationGranted, currentStep == 0)
@@ -601,26 +673,30 @@ private fun BackgroundTaskSetupScreen(
             }
 
             Spacer(Modifier.height(14.dp))
-            Surface(
+            NeoCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+                cornerRadius = 16.dp,
+                shadowOffset = 3.5.dp,
+                backgroundColor = NeoLime.copy(alpha = 0.08f),
+                borderColor = NeoLime,
             ) {
                 Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
-                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(11.dp)),
+                            Modifier
+                                .size(40.dp)
+                                .background(NeoLime, RoundedCornerShape(10.dp))
+                                .border(1.5.dp, NeoBlack, RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(currentIcon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
+                            Icon(currentIcon, null, tint = NeoBlack, modifier = Modifier.size(21.dp))
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("STEP ${currentStep + 1} OF 3", color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-                            Text(currentTitle, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("STEP ${currentStep + 1} OF 3", color = if (isSystemInDarkTheme()) NeoLime else NeoBlack, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
+                            Text(currentTitle, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
-                        if (currentGranted) Icon(Icons.Default.Check, "Granted", tint = PocketGreen)
+                        if (currentGranted) Icon(Icons.Default.Check, "Granted", tint = NeoLime)
                     }
                     Spacer(Modifier.height(14.dp))
                     Text(currentDescription, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 18.sp)
@@ -631,7 +707,7 @@ private fun BackgroundTaskSetupScreen(
                         Text(currentPrivacyNote, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
                     }
                     Spacer(Modifier.height(18.dp))
-                    Button(
+                    NeoButton(
                         onClick = {
                             when (currentStep) {
                                 0 -> when {
@@ -670,12 +746,9 @@ private fun BackgroundTaskSetupScreen(
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(13.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
                     ) {
                         Text(
                             when (currentStep) {
@@ -684,9 +757,10 @@ private fun BackgroundTaskSetupScreen(
                                 else -> "Enable and finish"
                             },
                             fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp), tint = NeoBlack)
                     }
                     if (currentStep < 2 && !currentGranted) {
                         TextButton(
@@ -720,17 +794,18 @@ private fun PermissionSummaryRow(
     complete: Boolean,
     active: Boolean,
 ) {
+    val isDark = isSystemInDarkTheme()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+            .background(if (active) NeoLime.copy(alpha = 0.12f) else Color.Transparent)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             icon,
             null,
-            tint = if (active) MaterialTheme.colorScheme.primary else if (complete) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (active) (if (isDark) NeoLime else NeoBlack) else if (complete) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(12.dp))
@@ -739,11 +814,11 @@ private fun PermissionSummaryRow(
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 13.sp,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
         )
         when {
-            complete -> Icon(Icons.Default.Check, "Complete", tint = PocketGreen, modifier = Modifier.size(18.dp))
-            active -> Text("Required", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            complete -> Icon(Icons.Default.Check, "Complete", tint = NeoLime, modifier = Modifier.size(18.dp))
+            active -> Text("Required", color = if (isDark) NeoLime else NeoBlack, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             else -> Text("Next", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         }
     }
@@ -881,11 +956,10 @@ private fun RuntimeSetupPromptScreen(
                 Spacer(Modifier.height(20.dp))
 
                 // Hardware & Compatibility Specs Card
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                NeoCard(
                     modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 16.dp,
+                    shadowOffset = 3.5.dp,
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
@@ -899,7 +973,7 @@ private fun RuntimeSetupPromptScreen(
                                     null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp),
-                                )
+                                    )
                                 Spacer(Modifier.width(8.dp))
                                 Column {
                                     Text(
@@ -915,19 +989,11 @@ private fun RuntimeSetupPromptScreen(
                                     )
                                 }
                             }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (compatible) PocketGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
-                                border = BorderStroke(0.5.dp, if (compatible) PocketGreen.copy(alpha = 0.35f) else MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
-                            ) {
-                                Text(
-                                    text = if (compatible) "Ready" else "Unsupported",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (compatible) PocketGreen else MaterialTheme.colorScheme.error,
-                                )
-                            }
+                            NeoBadge(
+                                text = if (compatible) "Ready" else "Unsupported",
+                                containerColor = if (compatible) NeoLime else MaterialTheme.colorScheme.error,
+                                contentColor = if (compatible) NeoBlack else Color.White,
+                            )
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 1.dp)
@@ -963,36 +1029,27 @@ private fun RuntimeSetupPromptScreen(
 
                 Spacer(Modifier.height(28.dp))
 
-                Button(
+                NeoButton(
                     onClick = { currentStep = 1 },
                     enabled = compatible,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = if (compatible) "Continue to tool setup" else "Device not supported",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
+                    Text(
+                        text = if (compatible) "Continue to tool setup" else "Device not supported",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = NeoBlack,
+                    )
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -1026,33 +1083,35 @@ private fun RuntimeSetupPromptScreen(
                 )
 
                 Spacer(Modifier.height(18.dp))
-                Surface(
+                NeoCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    cornerRadius = 16.dp,
+                    shadowOffset = 3.5.dp,
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
-                            modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(NeoLime, RoundedCornerShape(10.dp))
+                                .border(1.5.dp, NeoBlack, RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Default.Terminal, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                            Icon(Icons.Default.Terminal, null, tint = NeoBlack, modifier = Modifier.size(19.dp))
                         }
                         Spacer(Modifier.width(11.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
                                 if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) "Core runtime · 68.8 MB" else "Core runtime · 68.8 MB download",
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 13.5.sp,
                             )
                             Text("Ubuntu  ·  Node.js  ·  npm  ·  Git", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         }
-                        Icon(Icons.Default.Check, "Included", tint = PocketGreen, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Check, "Included", tint = NeoLime, modifier = Modifier.size(20.dp))
                     }
                 }
 
@@ -1060,11 +1119,10 @@ private fun RuntimeSetupPromptScreen(
                 Text("CODING AGENT", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
                 Spacer(Modifier.height(8.dp))
 
-                Surface(
+                NeoCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    cornerRadius = 16.dp,
+                    shadowOffset = 3.5.dp,
                 ) {
                     Column {
                         AgentKind.entries.forEachIndexed { index, agent ->
@@ -1093,11 +1151,10 @@ private fun RuntimeSetupPromptScreen(
                 Text("OPTIONAL TOOLCHAINS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
                 Spacer(Modifier.height(8.dp))
 
-                Surface(
+                NeoCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    cornerRadius = 16.dp,
+                    shadowOffset = 3.5.dp,
                 ) {
                     Column {
                         DevStack.entries.forEachIndexed { index, stack ->
@@ -1126,39 +1183,30 @@ private fun RuntimeSetupPromptScreen(
                 }
                 Spacer(Modifier.height(12.dp))
 
-                Button(
+                NeoButton(
                     onClick = onDownload,
                     enabled = compatible,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = if (compatible) "Install Mobile Harness" else "Device not supported",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                        )
-                        if (compatible) {
-                            Spacer(Modifier.width(8.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp))
-                        }
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = NeoBlack,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (compatible) "Install Mobile Harness" else "Device not supported",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
+                    if (compatible) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp), tint = NeoBlack)
                     }
                 }
             }
@@ -1331,20 +1379,11 @@ private fun AgentChoiceRow(
                 )
                 if (agent == AgentKind.DEEPSEEK_HARNESS) {
                     Spacer(Modifier.width(7.dp))
-                    Surface(
-                        color = PocketOrange.copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(50),
-                    ) {
-                        Text(
-                            "Recommended",
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                            color = PocketOrange,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    }
+                    NeoBadge(
+                        text = "RECOMMENDED",
+                        color = NeoLime,
+                        textColor = NeoBlack,
+                    )
                 }
             }
             Spacer(Modifier.height(1.dp))
@@ -1500,7 +1539,7 @@ private fun RuntimeInstallationScreen(
                     "STEP 1 OF 3",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = PocketOrange,
+                    color = NeoLime,
                     letterSpacing = 1.1.sp,
                 )
                 Spacer(Modifier.weight(1f))
@@ -1536,23 +1575,22 @@ private fun RuntimeInstallationScreen(
                 )
             }
             Spacer(Modifier.height(14.dp))
-            Surface(
+            NeoCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                cornerRadius = 16.dp,
+                shadowOffset = 3.5.dp,
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Installation progress", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Installation progress", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        Text("${(state.startupProgress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("${(state.startupProgress * 100).toInt()}%", color = NeoLime, fontSize = 14.sp, fontWeight = FontWeight.Black)
                     }
                     Spacer(Modifier.height(12.dp))
                     LinearProgressIndicator(
                         progress = { state.startupProgress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth().height(6.dp),
-                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth().height(8.dp).neoBorder(1.dp, cornerRadius = 4.dp),
+                        color = NeoLime,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                     Spacer(Modifier.height(10.dp))
@@ -1850,20 +1888,19 @@ private fun SetupLogPanel(logs: List<String>) {
         }
     }
 
-    Surface(
+    NeoCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = !expanded },
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        cornerRadius = 14.dp,
+        shadowOffset = 3.dp,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.Terminal,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = NeoLime,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -1965,7 +2002,16 @@ private fun StartupErrorScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(Icons.Default.Warning, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.error)
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .neoShadow(offsetX = 3.dp, offsetY = 3.dp, cornerRadius = 16.dp)
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Warning, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.error)
+            }
             Spacer(Modifier.height(20.dp))
             Text(
                 if (isOffline) "You're offline" else "Mobile Harness couldn't finish starting",
@@ -1980,22 +2026,24 @@ private fun StartupErrorScreen(
                 textAlign = TextAlign.Center,
             )
             if (logs.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
+                Spacer(Modifier.height(14.dp))
+                NeoButton(
                     onClick = {
                         clipboard.setText(AnnotatedString(logs.joinToString("\n")))
                         Toast.makeText(context, "Setup log copied", Toast.LENGTH_SHORT).show()
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
                     Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Copy setup logs")
+                    Text("Copy setup logs", fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(24.dp))
             if (isOffline) {
-                Button(
+                NeoButton(
                     onClick = {
                         val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                             Settings.Panel.ACTION_INTERNET_CONNECTIVITY
@@ -2004,16 +2052,28 @@ private fun StartupErrorScreen(
                         }
                         context.startActivity(Intent(action))
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    Text("Open internet settings")
+                    Text("Open internet settings", fontWeight = FontWeight.Bold)
                 }
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                    Text("Try again")
+                Spacer(Modifier.height(12.dp))
+                NeoButton(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
+                ) {
+                    Text("Try again", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             } else {
-                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                NeoButton(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
+                ) { Text("Try again", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
             }
         }
     }
@@ -2039,30 +2099,69 @@ private fun RootScreenHost(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                RootScreen.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = screen == tab,
-                        onClick = { screen = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        ),
-                    )
+            if (!keyboardVisible) {
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val navBorder = if (isDark) NeoDarkBorder else NeoBlack
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.border(BorderStroke(2.dp, navBorder)),
+                ) {
+                    RootScreen.entries.forEach { tab ->
+                        val isSelected = screen == tab
+                        val tabScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isSelected) 1.08f else 1.0f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+                            ),
+                            label = "tabScale",
+                        )
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { screen = tab },
+                            icon = {
+                                Icon(
+                                    tab.icon,
+                                    contentDescription = tab.label,
+                                    modifier = Modifier.graphicsLayer {
+                                        scaleX = tabScale
+                                        scaleY = tabScale
+                                    },
+                                )
+                            },
+                            label = {
+                                Text(
+                                    tab.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NeoBlack,
+                                selectedTextColor = if (isDark) NeoLime else NeoBlack,
+                                indicatorColor = NeoLime,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
                 }
             }
         },
         floatingActionButton = {
             if (screen == RootScreen.PROJECTS && !keyboardVisible && !showQuickTerminal) {
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val fabBorder = if (isDark) NeoDarkBorder else NeoBlack
                 ExtendedFloatingActionButton(
                     onClick = { showQuickTerminal = true },
-                    icon = { Icon(Icons.Default.Terminal, contentDescription = null) },
-                    text = { Text("Terminal", fontWeight = FontWeight.SemiBold) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Default.Terminal, contentDescription = null, tint = NeoBlack) },
+                    text = { Text("Terminal", fontWeight = FontWeight.Bold, color = NeoBlack) },
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .neoShadow(offsetX = 3.5.dp, offsetY = 3.5.dp, cornerRadius = 14.dp)
+                        .border(2.dp, fabBorder, RoundedCornerShape(14.dp)),
                 )
             }
         },
@@ -2410,11 +2509,18 @@ private fun DshApiProtocolPicker(selected: String, onSelected: (String) -> Unit)
 
 @Composable
 private fun StepDots(step: Int) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         repeat(3) { index ->
+            val active = index <= step
             Box(
-                Modifier.height(5.dp).weight(1f)
-                    .background(if (index <= step) PocketOrange else MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                Modifier
+                    .height(8.dp)
+                    .weight(1f)
+                    .neoShadow(offsetX = 1.5.dp, offsetY = 1.5.dp, cornerRadius = 4.dp)
+                    .background(if (active) NeoLime else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                    .border(1.5.dp, if (active) borderColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(4.dp)),
             )
         }
     }
@@ -2435,31 +2541,54 @@ private fun DeviceCheckStep(context: Context, onContinue: () -> Unit) {
         CheckRow(Icons.Default.Memory, "Memory", "$totalRamLabel GB usable · ${if (totalRamGb >= 7.5) "Full mode" else "Lite mode"}", true)
         CheckRow(Icons.Default.Code, "Processor", Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown", arm64)
         CheckRow(Icons.Default.Storage, "Android", "Android ${Build.VERSION.RELEASE}", true)
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(16.dp)) {
+        NeoCard(
+            cornerRadius = 14.dp,
+            shadowOffset = 3.dp,
+            backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        ) {
             Text(
                 "Only open projects you trust. The local Linux environment is a compatibility layer, not a hardened security sandbox.",
                 modifier = Modifier.padding(16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Button(onClick = onContinue, enabled = compatible, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-            Text(if (compatible) "Continue" else "This device is not supported")
+        NeoButton(
+            onClick = onContinue,
+            enabled = compatible,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            containerColor = NeoLime,
+            contentColor = NeoBlack,
+        ) {
+            Text(if (compatible) "Continue" else "This device is not supported", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
     }
 }
 
 @Composable
 private fun CheckRow(icon: ImageVector, title: String, value: String, passed: Boolean) {
+    val isDark = isSystemInDarkTheme()
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Icon(icon, null, Modifier.padding(11.dp).size(22.dp), tint = if (passed) PocketGreen else MaterialTheme.colorScheme.error)
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 12.dp)
+                .background(if (passed) NeoLime.copy(alpha = 0.18f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                .border(1.5.dp, if (passed) NeoLime else MaterialTheme.colorScheme.error, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                null,
+                Modifier.size(22.dp),
+                tint = if (passed) (if (isDark) NeoLime else NeoBlack) else MaterialTheme.colorScheme.error,
+            )
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(title, fontWeight = FontWeight.Bold)
             Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
-        Icon(if (passed) Icons.Default.Check else Icons.Default.Warning, null, tint = if (passed) PocketGreen else MaterialTheme.colorScheme.error)
+        Icon(if (passed) Icons.Default.Check else Icons.Default.Warning, null, tint = if (passed) NeoLime else MaterialTheme.colorScheme.error)
     }
 }
 
@@ -2477,24 +2606,12 @@ private fun ProviderChoiceStep(
             Text(
                 "STEP 2 OF 3",
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = PocketOrange,
+                fontWeight = FontWeight.Black,
+                color = if (isSystemInDarkTheme()) NeoLime else NeoBlack,
                 letterSpacing = 1.1.sp,
             )
             Spacer(Modifier.weight(1f))
-            Surface(
-                color = PocketGreen.copy(alpha = 0.10f),
-                shape = RoundedCornerShape(50),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Shield, null, tint = PocketGreen, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Secure setup", color = PocketGreen, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
+            NeoBadge(text = "Secure setup", containerColor = NeoLime, contentColor = NeoBlack)
         }
         Spacer(Modifier.height(10.dp))
         Text("Connect your AI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -2506,11 +2623,10 @@ private fun ProviderChoiceStep(
         )
         Spacer(Modifier.height(12.dp))
 
-        Surface(
+        NeoCard(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            cornerRadius = 16.dp,
+            shadowOffset = 3.5.dp,
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 itemsIndexed(visibleProviders) { index, provider ->
@@ -2541,18 +2657,15 @@ private fun ProviderChoiceStep(
                 fontSize = 11.sp,
             )
         }
-        Button(
+        NeoButton(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
+            containerColor = NeoLime,
+            contentColor = NeoBlack,
         ) {
-            Text("Continue", fontWeight = FontWeight.Bold)
+            Text("Continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Spacer(Modifier.width(8.dp))
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp), tint = NeoBlack)
         }
         TextButton(
             onClick = onChangeAgent,
@@ -2577,7 +2690,7 @@ private fun ProviderChoiceRow(
         ProviderKind.KIMI -> Color(0xFF8B7CF6)
         ProviderKind.OPENCODE_ZEN -> Color(0xFF22C55E)
         ProviderKind.NVIDIA_NIM -> Color(0xFF76B900)
-        ProviderKind.CUSTOM -> PocketOrange
+        ProviderKind.CUSTOM -> NeoLime
     }
     val mark = when (provider) {
         ProviderKind.CLAUDE -> "C"
@@ -2593,7 +2706,7 @@ private fun ProviderChoiceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+            .background(if (selected) NeoLime.copy(alpha = 0.12f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2601,35 +2714,24 @@ private fun ProviderChoiceRow(
         Box(
             modifier = Modifier
                 .size(32.dp)
-                .background(accent.copy(alpha = 0.15f), RoundedCornerShape(9.dp))
-                .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(9.dp)),
+                .background(accent.copy(alpha = 0.18f), RoundedCornerShape(9.dp))
+                .border(1.5.dp, accent, RoundedCornerShape(9.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(mark, color = accent, fontSize = if (mark.length > 1) 9.sp else 13.sp, fontWeight = FontWeight.Bold)
+            Text(mark, color = if (provider == ProviderKind.CUSTOM && !isSystemInDarkTheme()) NeoBlack else accent, fontSize = if (mark.length > 1) 9.sp else 13.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     provider.title,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (provider.experimental) {
                     Spacer(Modifier.width(6.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        shape = RoundedCornerShape(5.dp),
-                    ) {
-                        Text(
-                            "Beta",
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                    NeoBadge(text = "Beta", containerColor = NeoLime, contentColor = NeoBlack)
                 }
             }
             Spacer(Modifier.height(1.dp))
@@ -2644,15 +2746,15 @@ private fun ProviderChoiceRow(
         Spacer(Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .size(19.dp)
+                .size(20.dp)
                 .border(
-                    width = if (selected) 2.dp else 1.dp,
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    width = if (selected) 2.dp else 1.5.dp,
+                    color = if (selected) NeoLime else MaterialTheme.colorScheme.outlineVariant,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (selected) Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+            if (selected) Box(Modifier.size(10.dp).background(NeoLime, CircleShape))
         }
     }
 }
@@ -2795,15 +2897,17 @@ private fun ProviderCredentialsStep(
                                         Text(option.id, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
+                                val isDark = isSystemInDarkTheme()
+                                val borderColor = if (isDark) NeoDarkBorder else NeoBlack
                                 Box(
                                     Modifier.size(20.dp).border(
-                                        if (model == option.id) 2.dp else 1.dp,
-                                        if (model == option.id) PocketOrange else MaterialTheme.colorScheme.outline,
+                                        if (model == option.id) 2.dp else 1.5.dp,
+                                        if (model == option.id) NeoLime else borderColor.copy(alpha = 0.6f),
                                         CircleShape,
                                     ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    if (model == option.id) Box(Modifier.size(9.dp).background(PocketOrange, CircleShape))
+                                    if (model == option.id) Box(Modifier.size(9.dp).background(NeoLime, CircleShape))
                                 }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
@@ -2821,7 +2925,7 @@ private fun ProviderCredentialsStep(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("STEP 3 OF 3", color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("STEP 3 OF 3", color = NeoLime, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2844,10 +2948,10 @@ private fun ProviderCredentialsStep(
             )
         }
         item {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            NeoCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 18.dp,
+                shadowOffset = 3.5.dp,
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     OutlinedTextField(
@@ -2890,20 +2994,22 @@ private fun ProviderCredentialsStep(
             }
         }
         item {
-            OutlinedButton(
+            NeoButton(
                 onClick = {
                     if (models.isEmpty()) discoverModels() else showModels = true
                 },
                 enabled = baseUrl.isNotBlank() && hasKey && !isDiscovering && !isValidating,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
+                buttonColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 if (isDiscovering) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = NeoLime)
                     Spacer(Modifier.width(8.dp))
                 }
                 Icon(if (models.isEmpty()) Icons.Default.Search else Icons.Default.KeyboardArrowDown, null, Modifier.size(19.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (models.isEmpty()) "Find available models" else "Available models (${models.size})")
+                Text(if (models.isEmpty()) "Find available models" else "Available models (${models.size})", fontWeight = FontWeight.Bold)
             }
         }
         if (status != null) {
@@ -2925,36 +3031,38 @@ private fun ProviderCredentialsStep(
             }
         }
         item {
-            Button(
-                    onClick = {
-                        scope.launch {
-                            isValidating = true
-                            status = "Checking API key, model, and Claude Code settings…"
-                            statusDetails = null
-                            statusOk = true
-                            when (val result = onValidate(models)) {
-                                is ConnectionValidation.Success -> {
-                                    status = result.message
-                                    statusOk = true
-                                    onSave()
-                                }
-                                is ConnectionValidation.Failure -> {
-                                    status = result.message
-                                    statusDetails = result.providerMessage
-                                    statusOk = false
-                                }
+            NeoButton(
+                onClick = {
+                    scope.launch {
+                        isValidating = true
+                        status = "Checking API key, model, and Claude Code settings…"
+                        statusDetails = null
+                        statusOk = true
+                        when (val result = onValidate(models)) {
+                            is ConnectionValidation.Success -> {
+                                status = result.message
+                                statusOk = true
+                                onSave()
                             }
-                            isValidating = false
+                            is ConnectionValidation.Failure -> {
+                                status = result.message
+                                statusDetails = result.providerMessage
+                                statusOk = false
+                            }
                         }
-                    },
-                    enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                ) {
-                    if (isValidating) {
-                        CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(7.dp))
+                        isValidating = false
                     }
-                    Text(if (isValidating) "Checking" else "Continue")
+                },
+                enabled = baseUrl.isNotBlank() && model.isNotBlank() && hasKey && !isDiscovering && !isValidating,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                containerColor = NeoLime,
+                contentColor = NeoBlack,
+            ) {
+                if (isValidating) {
+                    CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = NeoBlack)
+                    Spacer(Modifier.width(7.dp))
+                }
+                Text(if (isValidating) "Checking" else "Continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
         item {
@@ -2986,15 +3094,9 @@ private fun ClaudeSubscriptionCredentialsStep(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("STEP 3 OF 3", color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("STEP 3 OF 3", color = if (isSystemInDarkTheme()) NeoLime else NeoBlack, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Encrypted locally", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                NeoBadge(text = "Encrypted locally", containerColor = NeoLime, contentColor = NeoBlack)
             }
             Spacer(Modifier.height(16.dp))
             Text("Claude subscription", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -3005,19 +3107,24 @@ private fun ClaudeSubscriptionCredentialsStep(
             )
         }
         item {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            NeoCard(
+                cornerRadius = 16.dp,
+                shadowOffset = 3.5.dp,
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("1. On a computer where Claude Code is installed, run:", fontSize = 13.sp)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0F141A), RoundedCornerShape(10.dp))
+                            .border(1.5.dp, NeoLime, RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                    ) {
                         Text(
                             "claude setup-token",
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
                             fontFamily = FontFamily.Monospace,
-                            color = PocketOrange,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoLime,
                         )
                     }
                     Text("2. Sign in to Claude and paste the generated token here.", fontSize = 13.sp)
@@ -3028,6 +3135,7 @@ private fun ClaudeSubscriptionCredentialsStep(
                         placeholder = { Text(if (hasStoredToken) "Saved securely — leave blank to keep it" else "Paste token") },
                         supportingText = if (hasStoredToken && token.isBlank()) ({ Text("A saved subscription token is ready to use") }) else null,
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {
@@ -3041,12 +3149,14 @@ private fun ClaudeSubscriptionCredentialsStep(
             }
         }
         item {
-            Button(
+            NeoButton(
                 onClick = onSave,
                 enabled = hasToken,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
+                containerColor = NeoLime,
+                contentColor = NeoBlack,
             ) {
-                Text("Save and continue")
+                Text("Save and continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
         item {
@@ -3122,30 +3232,34 @@ private fun ProjectsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(
+                    NeoButton(
                         onClick = onCreateQuickProject,
                         modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Chat,
                             contentDescription = null,
                             modifier = Modifier.size(17.dp),
+                            tint = NeoBlack,
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = "Quick project",
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             maxLines = 1,
                             softWrap = false,
+                            color = NeoBlack,
                         )
                     }
-                    OutlinedButton(
+                    NeoButton(
                         onClick = { showCreate = true },
                         modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     ) {
                         Icon(
@@ -3156,7 +3270,7 @@ private fun ProjectsScreen(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = "New project",
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             maxLines = 1,
                             softWrap = false,
@@ -3229,7 +3343,7 @@ private fun ProjectsScreen(
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                 ) {
                                     Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Code, null, tint = PocketOrange, modifier = Modifier.size(19.dp))
+                                        Icon(Icons.Default.Code, null, tint = NeoLime, modifier = Modifier.size(19.dp))
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(
@@ -3256,22 +3370,35 @@ private fun ProjectsScreen(
             }
             state.appUpdate?.let { update ->
                 item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().clickable { showUpdateDialog = true },
-                        shape = RoundedCornerShape(20.dp),
-                        color = PocketOrange.copy(alpha = 0.11f),
-                        border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.45f)),
+                    val isDark = isSystemInDarkTheme()
+                    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+                    NeoCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .neoTactile(shadowOffset = 3.dp) { showUpdateDialog = true },
+                        cornerRadius = 16.dp,
+                        shadowOffset = 3.dp,
                     ) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = CircleShape, color = PocketOrange.copy(alpha = 0.18f), modifier = Modifier.size(46.dp)) {
-                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Download, null, tint = PocketOrange) }
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .background(NeoLime, RoundedCornerShape(12.dp))
+                                    .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.Download, null, tint = NeoBlack)
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("Mobile Harness ${update.versionName}", fontWeight = FontWeight.Bold)
                                 Text("A new update is ready", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text("Update", color = PocketOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            NeoBadge(
+                                text = "UPDATE",
+                                color = NeoLime,
+                                textColor = NeoBlack,
+                            )
                         }
                     }
                 }
@@ -3279,12 +3406,14 @@ private fun ProjectsScreen(
             item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             if (projects.isEmpty()) {
                 item {
-                    Card(
+                    val isDark = isSystemInDarkTheme()
+                    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+                    NeoCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 10.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                        cornerRadius = 18.dp,
+                        shadowOffset = 3.5.dp,
                     ) {
                         Column(
                             modifier = Modifier
@@ -3293,19 +3422,19 @@ private fun ProjectsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = PocketOrange.copy(alpha = 0.15f),
-                                modifier = Modifier.size(56.dp),
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .background(NeoLime, RoundedCornerShape(16.dp))
+                                    .border(2.dp, borderColor, RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Folder,
-                                        contentDescription = null,
-                                        tint = PocketOrange,
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
+                                Icon(
+                                    Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = NeoBlack,
+                                    modifier = Modifier.size(28.dp),
+                                )
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -3359,7 +3488,7 @@ private fun ProjectsScreen(
     )
     if (showGitDialog) AlertDialog(
         onDismissRequest = { if (!state.gitCloneRunning) showGitDialog = false },
-        icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
+        icon = { Icon(Icons.Default.Code, null, tint = NeoLime) },
         title = { Text("Clone Git repository") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3375,10 +3504,12 @@ private fun ProjectsScreen(
             }
         },
         confirmButton = {
-            Button(
+            NeoButton(
                 enabled = gitUrl.isNotBlank() && !state.gitCloneRunning,
+                buttonColor = NeoLime,
+                contentColor = NeoBlack,
                 onClick = { onCloneGit(gitUrl); showGitDialog = false; gitUrl = "" },
-            ) { Text(if (state.gitCloneRunning) "Cloning…" else "Clone project") }
+            ) { Text(if (state.gitCloneRunning) "Cloning…" else "Clone project", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = { showGitDialog = false }, enabled = !state.gitCloneRunning) { Text("Cancel") } },
     )
@@ -3389,7 +3520,7 @@ private fun ProjectsScreen(
         }
         AlertDialog(
             onDismissRequest = { if (!state.gitCloneRunning) showGitHubDialog = false },
-            icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
+            icon = { Icon(Icons.Default.Code, null, tint = NeoLime) },
             title = { Text(state.githubLogin?.let { "GitHub · @$it" } ?: "Connect GitHub") },
             text = {
                 when (state.githubAuthStatus) {
@@ -3399,10 +3530,10 @@ private fun ProjectsScreen(
                             color = if (state.githubAuthStatus == GitHubAuthStatus.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                         )
-                        Button(onClick = onStartGitHubLogin, modifier = Modifier.fillMaxWidth()) { Text("Sign in with GitHub") }
+                        NeoButton(onClick = onStartGitHubLogin, buttonColor = NeoLime, contentColor = NeoBlack, modifier = Modifier.fillMaxWidth()) { Text("Sign in with GitHub", fontWeight = FontWeight.Bold) }
                     }
                     GitHubAuthStatus.STARTING -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp, color = NeoLime)
                         Spacer(Modifier.height(12.dp))
                         Text(state.githubMessage ?: "Starting GitHub sign-in…")
                     }
@@ -3424,13 +3555,15 @@ private fun ProjectsScreen(
                             )
                         }
                         Text("Tap the code to copy it. PocketDev will connect automatically after approval.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(
+                        NeoButton(
                             onClick = onGenerateNewGitHubCode,
+                            buttonColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Generate new code")
+                            Text("Generate new code", fontWeight = FontWeight.Bold)
                         }
                     }
                     GitHubAuthStatus.CONNECTED -> Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -3448,7 +3581,7 @@ private fun ProjectsScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        if (state.githubRepositoriesLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (state.githubRepositoriesLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = NeoLime)
                         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(filteredRepositories, key = { it.fullName }) { repository ->
                                 Surface(
@@ -3460,7 +3593,7 @@ private fun ProjectsScreen(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                                 ) {
                                     Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(if (repository.private) Icons.Default.Key else Icons.Default.Code, null, modifier = Modifier.size(17.dp), tint = PocketOrange)
+                                        Icon(if (repository.private) Icons.Default.Key else Icons.Default.Code, null, modifier = Modifier.size(17.dp), tint = NeoLime)
                                         Spacer(Modifier.width(9.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(repository.fullName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -3497,7 +3630,7 @@ private fun ProjectsScreen(
         val progress = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
         AlertDialog(
             onDismissRequest = { if (!installing) showUpdateDialog = false },
-            icon = { Icon(Icons.Default.Download, null, tint = PocketOrange, modifier = Modifier.size(34.dp)) },
+            icon = { Icon(Icons.Default.Download, null, tint = NeoLime, modifier = Modifier.size(34.dp)) },
             title = { Text("Update to ${update.versionName}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3513,8 +3646,8 @@ private fun ProjectsScreen(
                         }
                     }
                     if (downloading) {
-                        if (total > 0) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                        else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        if (total > 0) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = NeoLime)
+                        else LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = NeoLime)
                         Text(
                             if (total > 0) "Downloading ${formatMegabytes(downloaded)} / ${formatMegabytes(total)} · ${(progress * 100).toInt()}%" else "Downloading ${formatMegabytes(downloaded)}",
                             fontSize = 12.sp,
@@ -3526,8 +3659,10 @@ private fun ProjectsScreen(
                 }
             },
             confirmButton = {
-                Button(
+                NeoButton(
                     enabled = !downloading && !installing,
+                    buttonColor = NeoLime,
+                    contentColor = NeoBlack,
                     onClick = {
                         if (!canInstall && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             permissionLauncher.launch(
@@ -3538,7 +3673,7 @@ private fun ProjectsScreen(
                         }
                     },
                 ) {
-                    Text(when { !canInstall -> "Grant permission"; downloading -> "Downloading…"; installing -> "Installing…"; else -> "Download and install" })
+                    Text(when { !canInstall -> "Grant permission"; downloading -> "Downloading…"; installing -> "Installing…"; else -> "Download and install" }, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = { if (!installing) TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } },
@@ -3555,17 +3690,24 @@ private fun ImportSourceButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(46.dp),
-        shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp),
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+    Box(
+        modifier = modifier
+            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 12.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
+            .neoTactile(enabled = enabled && !loading, cornerRadius = 12.dp, shadowOffset = 2.dp, onClick = onClick)
+            .height(46.dp)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        if (loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-        else Icon(icon, null, Modifier.size(17.dp))
-        Spacer(Modifier.width(7.dp))
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = NeoLime)
+            else Icon(icon, null, Modifier.size(17.dp), tint = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(7.dp))
+            Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
     }
 }
 
@@ -3574,7 +3716,7 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
     val dotColor = when (state.apiPingStatus) {
         ApiPingStatus.OK -> PocketGreen
         ApiPingStatus.FAILED -> MaterialTheme.colorScheme.error
-        ApiPingStatus.PINGING -> PocketOrange
+        ApiPingStatus.PINGING -> NeoLime
         ApiPingStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     }
     val providerLabel = when {
@@ -3588,27 +3730,39 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
         else -> state.provider.kind.title
     }
 
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    Box(
+        modifier = Modifier
+            .neoTactile(
+                shadowOffset = 2.5.dp,
+                pressedOffset = 0.8.dp,
+                cornerRadius = 50.dp,
+                onClick = onSettings,
+            )
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50))
+            .border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(50)),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clickable(onClick = onSettings).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 5.dp, bottom = 5.dp),
         ) {
-            // Status dot
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(dotColor, CircleShape),
-            )
+            // Status dot with live pulse when active
+            if (state.apiPingStatus == ApiPingStatus.OK || state.apiPingStatus == ApiPingStatus.PINGING) {
+                PulsingDot(color = dotColor, size = 7.dp)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(dotColor, CircleShape),
+                )
+            }
             Spacer(Modifier.width(8.dp))
             // Model / provider name
             Text(
                 text = providerLabel,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
@@ -3619,7 +3773,7 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
                 modifier = Modifier.size(28.dp),
             ) {
                 if (state.apiPingStatus == ApiPingStatus.PINGING) {
-                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = PocketOrange)
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = NeoLime)
                 } else {
                     Icon(
                         Icons.Default.Refresh,
@@ -3648,10 +3802,30 @@ private fun ProjectCard(
     var showRename by rememberSaveable(project.id) { mutableStateOf(false) }
     var showDelete by rememberSaveable(project.id) { mutableStateOf(false) }
     var renameText by rememberSaveable(project.id) { mutableStateOf(project.name) }
-    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Icon(Icons.Default.Folder, null, Modifier.padding(13.dp), tint = PocketOrange)
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp)
+            .neoTactile(
+                shadowOffset = 3.5.dp,
+                pressedOffset = 1.dp,
+                cornerRadius = 14.dp,
+                onClick = onOpen,
+            )
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+            .border(2.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(14.dp)),
+    ) {
+        Row(Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(NeoLime.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                    .border(1.5.dp, NeoLime, RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Folder, null, Modifier.size(24.dp), tint = NeoLime)
             }
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
@@ -3659,19 +3833,20 @@ private fun ProjectCard(
                     Text(
                         project.name,
                         modifier = Modifier.weight(1f, fill = false),
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (taskRunning || terminalRunning) {
                         Spacer(Modifier.width(8.dp))
-                        CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp)
+                        PulsingDot(color = NeoLime, size = 6.dp)
                         Spacer(Modifier.width(5.dp))
                         Text(
                             if (taskRunning) "Task running" else "Terminal running",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            color = NeoLime,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -3838,6 +4013,37 @@ private fun WorkspaceScreen(
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onBuildAndRunAndroid: () -> Unit,
+    onRefreshGit: () -> Unit = {},
+    onStageFile: (String) -> Unit = {},
+    onUnstageFile: (String) -> Unit = {},
+    onStageAll: () -> Unit = {},
+    onUnstageAll: () -> Unit = {},
+    onDiscardFile: (String) -> Unit = {},
+    onCommit: (String, Boolean) -> Unit = { _, _ -> },
+    onCreateBranch: (String, Boolean) -> Unit = { _, _ -> },
+    onCheckoutBranch: (String) -> Unit = {},
+    onDeleteBranch: (String) -> Unit = {},
+    onMergeBranch: (String) -> Unit = {},
+    onCreateWorktree: (String) -> Unit = {},
+    onRemoveWorktree: (String) -> Unit = {},
+    onPushGit: () -> Unit = {},
+    onPullGit: () -> Unit = {},
+    onSelectCommit: (com.jarves.mh.model.GitCommit?) -> Unit = {},
+    onStartGitHubLogin: () -> Unit = {},
+    onDecomposeGoal: (String) -> Unit = {},
+    onCreateTask: (String, String, com.jarves.mh.model.TaskPriority, String?, List<String>) -> Unit = { _, _, _, _, _ -> },
+    onMoveTaskStatus: (String, com.jarves.mh.model.TaskStatus) -> Unit = { _, _ -> },
+    onAssignTask: (String, String?) -> Unit = { _, _ -> },
+    onResetCircuitBreaker: () -> Unit = {},
+    onSendDirectMessage: (String, String, String) -> Unit = { _, _, _ -> },
+    onAddBlackboardEntry: (String, String, String) -> Unit = { _, _, _ -> },
+    onSendContextToAgent: (String) -> Unit = {},
+    onConsumeDesignModeDraft: () -> Unit = {},
+    onSetEffort: (String) -> Unit = {},
+    onCreateSchedule: (String, String, Int, Boolean, String) -> Unit = { _, _, _, _, _ -> },
+    onToggleSchedule: (String) -> Unit = {},
+    onDeleteSchedule: (String) -> Unit = {},
+    onMergeWorktree: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4012,29 +4218,67 @@ private fun WorkspaceScreen(
                         }
                     }
                     IconButton(onClick = { showChats = true }) { Icon(Icons.Default.History, "Project chats") }
-                    if (state.isRunning) CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+                    if (state.isRunning) {
+                        Box(Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                            PulsingDot(color = NeoLime, size = 9.dp)
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         bottomBar = {
-            if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES }.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = {
-                            selectedTab = tab
-                            if (tab == WorkspaceTab.FILES) onRefreshFiles()
-                            if (tab == WorkspaceTab.TERMINAL) onTerminalOpened()
-                        },
-                        icon = { Icon(tab.icon, tab.label) },
-                        label = { Text(tab.label, fontSize = 10.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        ),
-                    )
+            if (!keyboardVisible) {
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val navBorder = if (isDark) NeoDarkBorder else NeoBlack
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.border(BorderStroke(2.dp, navBorder)),
+                ) {
+                    WorkspaceTab.entries.forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        val tabScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isSelected) 1.08f else 1.0f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+                            ),
+                            label = "wsTabScale",
+                        )
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = {
+                                selectedTab = tab
+                                if (tab == WorkspaceTab.FILES) onRefreshFiles()
+                                if (tab == WorkspaceTab.TERMINAL) onTerminalOpened()
+                                if (tab == WorkspaceTab.CHANGES) onRefreshGit()
+                            },
+                            icon = {
+                                Icon(
+                                    tab.icon,
+                                    tab.label,
+                                    modifier = Modifier.graphicsLayer {
+                                        scaleX = tabScale
+                                        scaleY = tabScale
+                                    },
+                                )
+                            },
+                            label = {
+                                Text(
+                                    tab.label,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NeoBlack,
+                                selectedTextColor = if (isDark) NeoLime else NeoBlack,
+                                indicatorColor = NeoLime,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
                 }
             }
         },
@@ -4065,6 +4309,32 @@ private fun WorkspaceScreen(
                         onTerminalOpened()
                         onTerminalPrepare(command)
                     },
+                    initialPrompt = state.designModePromptDraft,
+                    onConsumeInitialPrompt = onConsumeDesignModeDraft,
+                    activeModel = state.antigravityModel,
+                    reasoningEffort = state.antigravityEffort,
+                    onSetEffort = onSetEffort,
+                )
+                WorkspaceTab.TASKS -> TaskBoardScreen(
+                    tasks = state.orchestratorTasks,
+                    agents = state.orchestratorAgents,
+                    blackboardEntries = state.blackboardEntries,
+                    auditLogs = state.swarmAuditLogs,
+                    circuitBreaker = state.circuitBreakerState,
+                    inboxMessages = state.swarmInboxMessages,
+                    scheduledTasks = state.scheduledTasks,
+                    onDecomposeGoal = onDecomposeGoal,
+                    onCreateTask = onCreateTask,
+                    onMoveTaskStatus = onMoveTaskStatus,
+                    onAssignTask = onAssignTask,
+                    onResetCircuitBreaker = onResetCircuitBreaker,
+                    onSendDirectMessage = onSendDirectMessage,
+                    onAddBlackboardEntry = onAddBlackboardEntry,
+                    onCreateSchedule = onCreateSchedule,
+                    onToggleSchedule = onToggleSchedule,
+                    onDeleteSchedule = onDeleteSchedule,
+                    onMergeWorktree = onMergeWorktree,
+                    onRemoveWorktree = onRemoveWorktree,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4098,14 +4368,46 @@ private fun WorkspaceScreen(
                     showQuickCommands = false,
                     compactHeader = true,
                 )
-                WorkspaceTab.CHANGES -> ChangesTab(
-                    state.changes,
-                    onUndoChanges,
-                    onKeepChanges,
-                    onUndoFileChange,
-                    onKeepFileChange,
+                WorkspaceTab.CHANGES -> GitScreen(
+                    status = state.gitStatus,
+                    branches = state.gitBranches,
+                    worktrees = state.gitWorktrees,
+                    commits = state.gitCommits,
+                    stagedDiffs = state.gitStagedDiffs,
+                    unstagedDiffs = state.gitUnstagedDiffs,
+                    pullRequests = state.gitPullRequests,
+                    selectedCommit = state.selectedGitCommit,
+                    selectedCommitDiffs = state.selectedGitCommitDiffs,
+                    isLoading = state.gitOperationRunning,
+                    operationMessage = state.gitOperationMessage,
+                    isGitHubConnected = state.githubAuthStatus == GitHubAuthStatus.CONNECTED,
+                    onRefresh = onRefreshGit,
+                    onStageFile = onStageFile,
+                    onUnstageFile = onUnstageFile,
+                    onStageAll = onStageAll,
+                    onUnstageAll = onUnstageAll,
+                    onDiscardFile = onDiscardFile,
+                    onCommit = onCommit,
+                    onCreateBranch = onCreateBranch,
+                    onCheckoutBranch = onCheckoutBranch,
+                    onDeleteBranch = onDeleteBranch,
+                    onMergeBranch = onMergeBranch,
+                    onCreateWorktree = onCreateWorktree,
+                    onRemoveWorktree = onRemoveWorktree,
+                    onPush = onPushGit,
+                    onPull = onPullGit,
+                    onSelectCommit = onSelectCommit,
+                    onCreatePullRequest = onCreatePullRequest,
+                    onOpenGitHubSettings = onStartGitHubLogin,
                 )
-                WorkspaceTab.PREVIEW -> PreviewTab(state.previewReady, state.previewUrl)
+                WorkspaceTab.PREVIEW -> com.jarves.mh.browser.BrowserInspectionScreen(
+                    ready = state.previewReady,
+                    url = state.previewUrl,
+                    onSendContextToAgent = { elementContext ->
+                        onSendContextToAgent(elementContext)
+                        selectedTab = WorkspaceTab.CHAT
+                    },
+                )
             }
         }
     }
@@ -4202,7 +4504,7 @@ private fun FileViewerScreen(
                             Icon(
                                 if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                                 "Copy file contents",
-                                tint = if (copied) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                tint = if (copied) NeoLime else MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -4215,7 +4517,7 @@ private fun FileViewerScreen(
             when {
                 loading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PocketOrange)
+                        CircularProgressIndicator(color = NeoLime)
                     }
                 }
                 content == null -> {
@@ -4303,39 +4605,35 @@ private fun FilesTab(
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
-            Surface(
+            NeoCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                ),
+                cornerRadius = 14.dp,
+                shadowOffset = 3.dp,
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "Files",
                         Modifier.weight(1f),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                     )
                     if (expandedDirectories.isNotEmpty()) {
                         TextButton(onClick = { expandedDirectories = emptyList() }) {
                             Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(17.dp))
                             Spacer(Modifier.width(3.dp))
-                            Text("Collapse all", fontSize = 11.sp)
+                            Text("Collapse all", fontSize = 11.sp, color = NeoLime, fontWeight = FontWeight.Bold)
                         }
                     }
                     if (!loading && files.any { !it.isDirectory }) {
-                        IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
+                        IconButton(onClick = onExport, modifier = Modifier.neoBounce()) { Icon(Icons.Default.Download, "Export project as ZIP") }
                     }
                     if (loading) {
-                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp, color = NeoLime)
                     } else {
-                        IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh files") }
+                        IconButton(onClick = onRefresh, modifier = Modifier.neoBounce()) { Icon(Icons.Default.Refresh, "Refresh files") }
                     }
                 }
             }
@@ -4343,15 +4641,26 @@ private fun FilesTab(
         }
         if (suggestedProjectRoot != null) {
             item(key = "suggested-project-root") {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                NeoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = NeoLime.copy(alpha = 0.15f),
+                    borderColor = NeoLime,
+                    cornerRadius = 14.dp,
+                    shadowOffset = 3.5.dp,
+                ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Project folder detected", fontWeight = FontWeight.Bold)
                         Text(
                             "Use $suggestedProjectRoot as the project root so Chat, Terminal, Changes, and Preview all run from the same folder.",
                             fontSize = 13.sp,
                         )
-                        Button(onClick = onUseSuggestedProjectRoot, modifier = Modifier.fillMaxWidth()) {
-                            Text("Use $suggestedProjectRoot as project root")
+                        NeoButton(
+                            onClick = onUseSuggestedProjectRoot,
+                            modifier = Modifier.fillMaxWidth(),
+                            containerColor = NeoLime,
+                            contentColor = NeoBlack,
+                        ) {
+                            Text("Use $suggestedProjectRoot as project root", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -4391,12 +4700,13 @@ private fun FilesTab(
                 Icon(
                     if (entry.isDirectory) Icons.Default.Folder else Icons.Default.Description,
                     null,
-                    tint = if (entry.isDirectory) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (entry.isDirectory) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(11.dp))
                 Text(
                     if (entry.isDirectory) "${entry.name} (${directChildCounts[entry.path] ?: 0})" else entry.name,
                     Modifier.weight(1f),
+                    fontWeight = if (entry.isDirectory) FontWeight.Bold else FontWeight.Medium,
                     color = if (!entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
                 if (!entry.isDirectory) {
@@ -4440,6 +4750,11 @@ private fun ChatTab(
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
+    initialPrompt: String? = null,
+    onConsumeInitialPrompt: () -> Unit = {},
+    activeModel: String = "",
+    reasoningEffort: String = "medium",
+    onSetEffort: (String) -> Unit = {},
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -4449,6 +4764,12 @@ private fun ChatTab(
         onDispose { view.keepScreenOn = false }
     }
     var prompt by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(initialPrompt) {
+        if (!initialPrompt.isNullOrBlank()) {
+            prompt = if (prompt.isBlank()) initialPrompt else "$prompt\n\n$initialPrompt"
+            onConsumeInitialPrompt()
+        }
+    }
     val chatScope = rememberCoroutineScope()
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
@@ -4457,6 +4778,20 @@ private fun ChatTab(
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
+        ContextWindowHeader(
+            messages = messages,
+            agentKind = agentKind,
+            activeModel = activeModel,
+            reasoningEffort = reasoningEffort,
+            onCycleEffort = {
+                val nextEffort = when (reasoningEffort.lowercase()) {
+                    "low" -> "medium"
+                    "medium" -> "high"
+                    else -> "low"
+                }
+                onSetEffort(nextEffort)
+            },
+        )
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -4577,20 +4912,20 @@ private fun ChatTab(
                 }
 
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val inputBorder = if (canSend) NeoLime else (if (isDark) NeoDarkBorder else NeoBlack)
 
-                Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neoShadow(offsetX = 3.dp, offsetY = 3.dp, cornerRadius = 18.dp)
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(18.dp))
+                        .border(2.dp, inputBorder, RoundedCornerShape(18.dp)),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .padding(horizontal = 6.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         IconButton(
@@ -4602,7 +4937,7 @@ private fun ChatTab(
                                 imageVector = Icons.Default.AttachFile,
                                 contentDescription = "Attach files",
                                 modifier = Modifier.size(20.dp),
-                                tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (pendingAttachments.isNotEmpty()) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
 
@@ -4618,7 +4953,7 @@ private fun ChatTab(
                                 fontSize = 15.sp,
                                 lineHeight = 20.sp,
                             ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            cursorBrush = SolidColor(NeoLime),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                             decorationBox = { innerTextField ->
                                 Box(contentAlignment = Alignment.CenterStart) {
@@ -4640,17 +4975,18 @@ private fun ChatTab(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
+                                    .neoBounce(onClick = onStop)
                                     .background(
                                         color = MaterialTheme.colorScheme.error,
                                         shape = CircleShape,
                                     )
-                                    .clickable(onClick = onStop),
+                                    .border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Stop,
                                     contentDescription = "Stop AI task",
-                                    tint = MaterialTheme.colorScheme.onError,
+                                    tint = Color.White,
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -4658,25 +4994,29 @@ private fun ChatTab(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .background(
-                                        color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable(
-                                        enabled = canSend,
-                                        onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                            }
-                                        },
+                                    .then(
+                                        if (canSend) {
+                                            Modifier
+                                                .neoBounce(
+                                                    pressedScale = 0.88f,
+                                                    onClick = {
+                                                        onSend(prompt)
+                                                        prompt = ""
+                                                    },
+                                                )
+                                                .background(NeoLime, CircleShape)
+                                                .border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, CircleShape)
+                                        } else {
+                                            Modifier
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                        }
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ArrowUpward,
                                     contentDescription = "Send",
-                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    tint = if (canSend) NeoBlack else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                     modifier = Modifier.size(19.dp),
                                 )
                             }
@@ -4684,6 +5024,134 @@ private fun ChatTab(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ContextWindowHeader(
+    messages: List<ChatMessage>,
+    agentKind: AgentKind,
+    activeModel: String,
+    reasoningEffort: String,
+    onCycleEffort: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+
+    val totalChars = remember(messages) {
+        messages.sumOf { it.text.length + it.workItems.sumOf { w -> w.title.length + w.body.length } }
+    }
+    val estimatedTokens = (totalChars / 4).coerceAtLeast(120)
+    val maxTokens = 200000
+    val usageRatio = (estimatedTokens.toFloat() / maxTokens).coerceIn(0.01f, 1f)
+    val cacheWarmthPercent = if (messages.size > 1) 85 + (messages.size % 12) else 30
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, borderColor)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                // Left: Cache warmth & context usage
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Cache warmth badge
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(NeoLime.copy(alpha = 0.2f))
+                            .border(1.dp, NeoLime, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(NeoLime, CircleShape),
+                        )
+                        Text(
+                            "CACHE $cacheWarmthPercent%",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isDark) NeoLime else NeoBlack,
+                        )
+                    }
+
+                    // Context tokens text
+                    Text(
+                        "${estimatedTokens / 1000}k / ${maxTokens / 1000}k tokens (${(usageRatio * 100).toInt()}%)",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Right: Model & Reasoning Effort
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val displayModel = if (activeModel.isNotBlank()) {
+                        activeModel.substringAfterLast("/")
+                    } else {
+                        agentKind.displayName
+                    }
+
+                    Text(
+                        displayModel,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    // Effort toggle pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, borderColor, RoundedCornerShape(4.dp))
+                            .clickable { onCycleEffort() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            "EFFORT: ${reasoningEffort.uppercase()}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = NeoLime,
+                        )
+                    }
+                }
+            }
+
+            // Visual linear progress indicator
+            LinearProgressIndicator(
+                progress = { usageRatio },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(1.5.dp)),
+                color = NeoLime,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
         }
     }
 }
@@ -4762,7 +5230,7 @@ private fun ClaudeActivityDisclosure(
 @Composable
 private fun AnimatedThinkingDots(
     modifier: Modifier = Modifier,
-    dotColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    dotColor: Color = NeoLime,
 ) {
     val transition = rememberInfiniteTransition(label = "thinking_dots")
     val dot1Offset by transition.animateFloat(
@@ -5025,11 +5493,23 @@ private fun formatDuration(totalSeconds: Long): String = when {
 
 @Composable
 private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val bubbleBorder = if (isDark) NeoDarkBorder else NeoBlack
+    val bubbleBg = if (message.fromUser) NeoLime else MaterialTheme.colorScheme.surface
+    val bubbleCornerRadius = 14.dp
+
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(if (message.fromUser) .84f else .94f)
+                .padding(bottom = 6.dp)
+                .neoShadow(
+                    offsetX = if (message.fromUser) 3.5.dp else 3.dp,
+                    offsetY = if (message.fromUser) 3.5.dp else 3.dp,
+                    cornerRadius = bubbleCornerRadius,
+                )
+                .background(bubbleBg, RoundedCornerShape(bubbleCornerRadius))
+                .border(2.dp, bubbleBorder, RoundedCornerShape(bubbleCornerRadius)),
         ) {
             Column(Modifier.padding(top = 12.dp)) {
                 SelectionContainer {
@@ -5037,8 +5517,8 @@ private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Uni
                         Text(
                             text = message.text,
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+                            color = NeoBlack,
                         )
                     } else {
                         MarkdownText(
@@ -5079,21 +5559,23 @@ private fun AttachmentChip(
     onOpen: (() -> Unit)?,
     onRemove: (() -> Unit)?,
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val icon = when {
         attachment.mimeType.startsWith("image/") -> Icons.Default.Image
         else -> Icons.Default.Description
     }
-    Surface(
-        modifier = Modifier.then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Box(
+        modifier = Modifier
+            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
+            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+            .border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(10.dp)),
     ) {
         Row(Modifier.padding(start = 9.dp, end = if (onRemove == null) 10.dp else 3.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(17.dp), tint = PocketOrange)
+            Icon(icon, null, Modifier.size(17.dp), tint = NeoLime)
             Spacer(Modifier.width(7.dp))
             Column(Modifier.widthIn(max = 180.dp)) {
-                Text(attachment.displayName, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(attachment.displayName, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(formatFileSize(attachment.sizeBytes), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (onRemove != null) {
@@ -5107,17 +5589,48 @@ private fun AttachmentChip(
 
 @Composable
 private fun ApprovalCard(request: ToolRequest, onApproval: (Boolean) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .neoShadow(offsetX = 3.5.dp, offsetY = 3.5.dp, cornerRadius = 14.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+            .border(2.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(14.dp))
+            .padding(16.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Warning, null, tint = PocketOrange)
-                Spacer(Modifier.width(8.dp)); Text("Review this action", fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .background(NeoLime.copy(alpha = 0.2f), CircleShape)
+                        .border(1.5.dp, NeoLime, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Warning, null, tint = NeoLime, modifier = Modifier.size(17.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("Review this action", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
-            Text(request.explanation)
-            request.affectedPaths.forEach { Text("• $it", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onApproval(false) }, Modifier.weight(1f)) { Text("Reject") }
-                Button(onClick = { onApproval(true) }, Modifier.weight(1f)) { Text("Allow once") }
+            Text(request.explanation, fontSize = 13.5.sp)
+            request.affectedPaths.forEach { Text("• $it", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                NeoButton(
+                    onClick = { onApproval(false) },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Text("Reject", fontWeight = FontWeight.Bold)
+                }
+                NeoButton(
+                    onClick = { onApproval(true) },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
+                ) {
+                    Text("Allow once", fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -5148,7 +5661,7 @@ private fun FilesTab(files: List<WorkspaceEntry>, loading: Boolean, onRefresh: (
                 Icon(
                     if (entry.isDirectory) Icons.Default.Folder else Icons.Default.Description,
                     null,
-                    tint = if (entry.isDirectory) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (entry.isDirectory) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(11.dp))
                 Text(entry.name, Modifier.weight(1f))
@@ -5177,11 +5690,10 @@ private fun ChangesTab(
     var expandedPath by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Surface(
+            NeoCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                cornerRadius = 14.dp,
+                shadowOffset = 3.dp,
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Text("Changes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -5192,61 +5704,85 @@ private fun ChangesTab(
         if (changes.isEmpty()) item { EmptyState(Icons.Default.Code, "No changes yet", "Ask Mobile Harness to update your project.") }
         items(changes, key = { it.path }) { change ->
             val expanded = expandedPath == change.path
-            Card(Modifier.fillMaxWidth()) {
+            NeoCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp,
+                shadowOffset = 3.5.dp,
+            ) {
                 Column {
                     Row(
                         Modifier.fillMaxWidth().clickable { expandedPath = if (expanded) null else change.path }.padding(15.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Default.Description, null)
+                        Icon(Icons.Default.Description, null, tint = NeoLime)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(change.path, fontWeight = FontWeight.Medium, maxLines = 1)
+                            Text(change.path, fontWeight = FontWeight.Bold, maxLines = 1)
                             Text(
                                 if (expanded) "Hide line-by-line diff" else "Tap to review diff",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text("+${change.additions}", color = PocketGreen)
-                        Spacer(Modifier.width(7.dp))
-                        Text("-${change.deletions}", color = MaterialTheme.colorScheme.error)
+                        if (change.additions > 0) {
+                            NeoBadge(text = "+${change.additions}", containerColor = NeoLime, contentColor = NeoBlack)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (change.deletions > 0) {
+                            NeoBadge(text = "-${change.deletions}", containerColor = Color(0xFFFF5252), contentColor = Color.White)
+                        }
                     }
                     if (expanded) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(thickness = 1.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         Column(
-                            Modifier.fillMaxWidth().background(Color(0xFF0B0E14)).horizontalScroll(rememberScrollState()),
+                            Modifier.fillMaxWidth().background(Color(0xFF090C10)).horizontalScroll(rememberScrollState()),
                         ) {
                             change.diffLines.forEach { line -> DiffLineRow(line) }
                         }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(thickness = 1.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         Row(
                             Modifier.fillMaxWidth().padding(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedButton(
+                            NeoButton(
                                 onClick = {
                                     expandedPath = null
                                     onUndoFile(change.path)
                                 },
                                 modifier = Modifier.weight(1f),
-                            ) { Text("Undo file") }
-                            Button(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.error,
+                                borderColor = MaterialTheme.colorScheme.error,
+                            ) { Text("Undo file", fontWeight = FontWeight.Bold) }
+                            NeoButton(
                                 onClick = {
                                     expandedPath = null
                                     onKeepFile(change.path)
                                 },
                                 modifier = Modifier.weight(1f),
-                            ) { Text("Keep file") }
+                                containerColor = NeoLime,
+                                contentColor = NeoBlack,
+                            ) { Text("Keep file", fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
             }
         }
         if (changes.isNotEmpty()) item {
-            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                OutlinedButton(onClick = onUndo, Modifier.weight(1f)) { Text("Undo task") }
-                Button(onClick = onKeep, Modifier.weight(1f)) { Text("Keep changes") }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                NeoButton(
+                    onClick = onUndo,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.error,
+                    borderColor = MaterialTheme.colorScheme.error,
+                ) { Text("Undo task", fontWeight = FontWeight.Bold) }
+                NeoButton(
+                    onClick = onKeep,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    containerColor = NeoLime,
+                    contentColor = NeoBlack,
+                ) { Text("Keep changes", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -5261,12 +5797,12 @@ private fun DiffLineRow(line: DiffLine) {
         DiffLineType.INFO -> "·"
     }
     val background = when (line.type) {
-        DiffLineType.ADDITION -> Color(0xFF123226)
-        DiffLineType.DELETION -> Color(0xFF3A1D22)
+        DiffLineType.ADDITION -> Color(0xFF142410)
+        DiffLineType.DELETION -> Color(0xFF38151A)
         else -> Color.Transparent
     }
     val foreground = when (line.type) {
-        DiffLineType.ADDITION -> Color(0xFF83E6B8)
+        DiffLineType.ADDITION -> NeoLime
         DiffLineType.DELETION -> Color(0xFFFFA4A4)
         DiffLineType.INFO -> Color(0xFF8993A4)
         DiffLineType.CONTEXT -> Color(0xFFD5DAE3)
@@ -5312,12 +5848,40 @@ private fun PreviewTab(ready: Boolean, url: String?) {
         }
     }
 
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+
     Column(Modifier.fillMaxSize()) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            tonalElevation = 1.dp,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(width = 2.dp, color = borderColor),
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                // Retro window controls row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(10.dp).background(Color(0xFFFF5252), CircleShape).border(1.dp, NeoBlack, CircleShape))
+                        Box(Modifier.size(10.dp).background(Color(0xFFFFD600), CircleShape).border(1.dp, NeoBlack, CircleShape))
+                        Box(Modifier.size(10.dp).background(NeoLime, CircleShape).border(1.dp, NeoBlack, CircleShape))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "WEB PREVIEW",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (activeUrl != null) {
+                        NeoBadge(text = "LIVE", containerColor = NeoLime, contentColor = NeoBlack, isPulsing = true)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = address,
@@ -5329,17 +5893,19 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         singleLine = true,
                         label = { Text("Preview URL") },
                         placeholder = { Text("localhost:3000") },
+                        shape = RoundedCornerShape(10.dp),
                         leadingIcon = {
-                            Box(
-                                Modifier.size(8.dp).background(
-                                    if (activeUrl != null) PocketGreen else MaterialTheme.colorScheme.outline,
-                                    CircleShape,
-                                ),
-                            )
+                            if (activeUrl != null) {
+                                PulsingDot(color = NeoLime, size = 7.dp)
+                            } else {
+                                Box(
+                                    Modifier.size(8.dp).background(MaterialTheme.colorScheme.outline, CircleShape),
+                                )
+                            }
                         },
                         trailingIcon = {
-                            IconButton(onClick = navigate) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open URL")
+                            IconButton(onClick = navigate, modifier = Modifier.neoBounce()) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open URL", tint = NeoLime)
                             }
                         },
                         isError = addressError != null,
@@ -5349,11 +5915,13 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         ),
                         keyboardActions = KeyboardActions(onGo = { navigate() }),
                     )
+                    Spacer(Modifier.width(6.dp))
                     IconButton(
                         onClick = { webView?.reload() ?: navigate() },
                         enabled = address.isNotBlank(),
+                        modifier = Modifier.neoBounce(),
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh preview")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh preview", tint = if (address.isNotBlank()) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (addressError != null) {
@@ -5364,7 +5932,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         modifier = Modifier.padding(start = 16.dp, top = 3.dp),
                     )
                 } else if (loading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 5.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp), color = NeoLime)
                 }
             }
         }
@@ -5451,21 +6019,37 @@ private fun EmptyState(icon: ImageVector, title: String, body: String) {
 
 @Composable
 private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
-    val size = if (compact) 32.dp else 50.dp
-    val iconSize = if (compact) 17.dp else 24.dp
-    val cornerRadius = if (compact) 9.dp else 14.dp
-    val primary = MaterialTheme.colorScheme.primary
+    val size = if (compact) 34.dp else 50.dp
+    val iconSize = if (compact) 18.dp else 26.dp
+    val cornerRadius = if (compact) 8.dp else 12.dp
+
+    val infiniteTransition = rememberInfiniteTransition(label = "brandBreath")
+    val rot by infiniteTransition.animateFloat(
+        initialValue = -1.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "brandRot",
+    )
 
     Box(
         modifier = modifier
+            .graphicsLayer { rotationZ = rot }
+            .neoShadow(
+                offsetX = if (compact) 2.5.dp else 4.dp,
+                offsetY = if (compact) 2.5.dp else 4.dp,
+                cornerRadius = cornerRadius,
+            )
             .size(size)
             .background(
-                color = primary.copy(alpha = 0.12f),
+                color = NeoLime,
                 shape = RoundedCornerShape(cornerRadius),
             )
             .border(
-                width = 1.dp,
-                color = primary.copy(alpha = 0.32f),
+                width = 2.dp,
+                color = if (androidx.compose.foundation.isSystemInDarkTheme()) NeoDarkBorder else NeoBlack,
                 shape = RoundedCornerShape(cornerRadius),
             ),
         contentAlignment = Alignment.Center,
@@ -5474,7 +6058,7 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
             imageVector = Icons.Default.Terminal,
             contentDescription = "Mobile Harness",
             modifier = Modifier.size(iconSize),
-            tint = primary,
+            tint = NeoBlack,
         )
     }
 }

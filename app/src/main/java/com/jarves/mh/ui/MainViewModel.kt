@@ -242,6 +242,25 @@ data class AppUiState(
     val appUpdateDownloadedBytes: Long = 0L,
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
+    val gitStatus: com.jarves.mh.model.GitStatus? = null,
+    val gitBranches: List<com.jarves.mh.model.GitBranch> = emptyList(),
+    val gitWorktrees: List<com.jarves.mh.model.GitWorktree> = emptyList(),
+    val gitCommits: List<com.jarves.mh.model.GitCommit> = emptyList(),
+    val gitStagedDiffs: List<com.jarves.mh.model.GitFileDiff> = emptyList(),
+    val gitUnstagedDiffs: List<com.jarves.mh.model.GitFileDiff> = emptyList(),
+    val selectedGitCommit: com.jarves.mh.model.GitCommit? = null,
+    val selectedGitCommitDiffs: List<com.jarves.mh.model.GitFileDiff> = emptyList(),
+    val gitPullRequests: List<com.jarves.mh.model.GitPullRequest> = emptyList(),
+    val gitOperationRunning: Boolean = false,
+    val gitOperationMessage: String? = null,
+    val orchestratorTasks: List<com.jarves.mh.model.AgentTask> = emptyList(),
+    val orchestratorAgents: List<com.jarves.mh.model.AgentInstance> = emptyList(),
+    val blackboardEntries: List<com.jarves.mh.model.BlackboardEntry> = emptyList(),
+    val swarmAuditLogs: List<com.jarves.mh.orchestrator.SwarmAuditEvent> = emptyList(),
+    val circuitBreakerState: com.jarves.mh.model.CircuitBreakerState = com.jarves.mh.model.CircuitBreakerState(),
+    val swarmInboxMessages: List<com.jarves.mh.model.AgentInboxMessage> = emptyList(),
+    val scheduledTasks: List<com.jarves.mh.model.ScheduledTask> = emptyList(),
+    val designModePromptDraft: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -250,6 +269,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
+    private val gitRunner = com.jarves.mh.git.GitCommandRunner(application, installer)
+    val gitManager = com.jarves.mh.git.GitManager(gitRunner)
+    val worktreeManager = com.jarves.mh.git.WorktreeManager(gitRunner)
+    val taskBoardManager = com.jarves.mh.orchestrator.TaskBoardManager()
+    val blackboardMemoryStore = com.jarves.mh.orchestrator.BlackboardMemoryStore()
+    val agentInboxManager = com.jarves.mh.orchestrator.AgentInboxManager()
+    val godOrchestrator = com.jarves.mh.orchestrator.GodOrchestrator(taskBoardManager, agentInboxManager, blackboardMemoryStore)
+    private val gitHubClient = com.jarves.mh.network.GitHubClient()
     private val antigravityRuntime = AntigravityRuntimeBridge(
         application,
         model = { _state.value.antigravityModel },
@@ -1885,6 +1912,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         refreshProjectFiles()
+        refreshGitState()
+        loadAndRefreshOrchestrator(project)
         viewModelScope.launch {
             val pending = activeRuntime().loadPendingChanges(project.id)
             if (_state.value.activeProject?.id == project.id) _state.update { it.copy(changes = pending) }
@@ -2855,7 +2884,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     sizeBytes = if (file.isFile) file.length() else 0,
                 )
             }
-            .sortedWith(compareBy<WorkspaceEntry> { it.path.lowercase() }.thenByDescending { it.isDirectory })
+            .sortedWith(
+                compareBy<WorkspaceEntry> { entry ->
+                    val parent = if (entry.path.contains('/')) entry.path.substringBeforeLast('/') else ""
+                    parent.lowercase(java.util.Locale.ROOT)
+                }
+                .thenByDescending { it.isDirectory }
+                .thenBy { it.name.lowercase(java.util.Locale.ROOT) }
+            )
             .toList()
     }
 
@@ -3124,6 +3160,520 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun refreshGitState() {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val workspace = projectWorkspaceRoot(project)
+            val guestPath = projectGuestRoot(project)
+            if (!installer.isInstalled()) return@launch
+
+            if (!gitManager.isGitRepository(workspace, guestPath)) {
+                gitManager.init(workspace, guestPath)
+            }
+
+            val status = gitManager.status(workspace, guestPath).getOrNull()
+            val branches = gitManager.branches(workspace, guestPath).getOrNull().orEmpty()
+            val worktrees = worktreeManager.listWorktrees(workspace, guestPath).getOrNull().orEmpty()
+            val commits = gitManager.log(workspace, guestPath, maxCount = 50).getOrNull().orEmpty()
+            val stagedDiffs = gitManager.diff(workspace, guestPath, staged = true).getOrNull().orEmpty()
+            val unstagedDiffs = gitManager.diff(workspace, guestPath, staged = false).getOrNull().orEmpty()
+
+            val token = getGitHubToken()
+            val pullRequests = if (!token.isNullOrBlank()) {
+                val remotes = gitManager.getRemotes(workspace, guestPath).getOrNull().orEmpty()
+                val origin = remotes["origin"].orEmpty()
+                val repoFullName = extractGitHubRepoFullName(origin, project.description)
+                if (!repoFullName.isNullOrBlank()) {
+                    runCatching { gitHubClient.listPullRequests(token, repoFullName) }.getOrNull().orEmpty()
+                } else emptyList()
+            } else emptyList()
+
+            withContext(Dispatchers.Main) {
+                if (_state.value.activeProject?.id == project.id) {
+                    _state.update {
+                        it.copy(
+                            gitStatus = status,
+                            gitBranches = branches,
+                            gitWorktrees = worktrees,
+                            gitCommits = commits,
+                            gitStagedDiffs = stagedDiffs,
+                            gitUnstagedDiffs = unstagedDiffs,
+                            gitPullRequests = pullRequests,
+                            gitOperationRunning = false,
+                            gitOperationMessage = null,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun stageFile(path: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            gitManager.stageFile(projectWorkspaceRoot(project), projectGuestRoot(project), path)
+            refreshGitState()
+        }
+    }
+
+    fun unstageFile(path: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            gitManager.unstageFile(projectWorkspaceRoot(project), projectGuestRoot(project), path)
+            refreshGitState()
+        }
+    }
+
+    fun stageAllGitFiles() {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            gitManager.stageAll(projectWorkspaceRoot(project), projectGuestRoot(project))
+            refreshGitState()
+        }
+    }
+
+    fun unstageAllGitFiles() {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            gitManager.unstageAll(projectWorkspaceRoot(project), projectGuestRoot(project))
+            refreshGitState()
+        }
+    }
+
+    fun discardGitFile(path: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            gitManager.discardChanges(projectWorkspaceRoot(project), projectGuestRoot(project), path)
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun commitGitChanges(message: String, amend: Boolean = false) {
+        val project = _state.value.activeProject ?: return
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Committing changes…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val authorName = _state.value.githubLogin ?: "Mobile Harness User"
+            val authorEmail = _state.value.githubLogin?.let { "$it@users.noreply.github.com" } ?: "harness@mobile.internal"
+            val result = gitManager.commit(
+                workspace = projectWorkspaceRoot(project),
+                guestPath = projectGuestRoot(project),
+                message = message,
+                authorName = authorName,
+                authorEmail = authorEmail,
+                amend = amend,
+            )
+            withContext(Dispatchers.Main) {
+                result.onSuccess { commit ->
+                    _state.update { it.copy(toastMessage = "Committed: ${commit.shortHash} - ${commit.message}") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Commit failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun createGitBranch(name: String, checkout: Boolean = true) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = gitManager.createBranch(projectWorkspaceRoot(project), projectGuestRoot(project), name, checkout)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Branch '$name' created") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Branch creation failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            if (checkout) refreshProjectFiles()
+        }
+    }
+
+    fun checkoutGitBranch(name: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = gitManager.checkoutBranch(projectWorkspaceRoot(project), projectGuestRoot(project), name)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Switched to branch '$name'") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Checkout failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun deleteGitBranch(name: String, force: Boolean = false) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = gitManager.deleteBranch(projectWorkspaceRoot(project), projectGuestRoot(project), name, force)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Branch '$name' deleted") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Delete failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+        }
+    }
+
+    fun mergeGitBranch(name: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = gitManager.mergeBranch(projectWorkspaceRoot(project), projectGuestRoot(project), name)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Merged branch '$name'") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Merge failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun createGitWorktree(branchName: String) {
+        val project = _state.value.activeProject ?: return
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Creating isolated worktree…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = worktreeManager.addWorktree(projectWorkspaceRoot(project), projectGuestRoot(project), branchName)
+            withContext(Dispatchers.Main) {
+                result.onSuccess { wt ->
+                    _state.update { it.copy(toastMessage = "Created worktree for '${wt.branch}' at '${wt.path}'") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Worktree failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun removeGitWorktree(worktreePath: String) {
+        val project = _state.value.activeProject ?: return
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Removing worktree…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = worktreeManager.removeWorktree(projectWorkspaceRoot(project), projectGuestRoot(project), worktreePath)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Worktree '$worktreePath' removed") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Worktree removal failed: ${error.message?.take(150)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun pushGitBranch() {
+        val project = _state.value.activeProject ?: return
+        val branch = _state.value.gitStatus?.currentBranch ?: "main"
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Pushing '$branch' to remote…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val token = getGitHubToken()
+            val result = gitManager.push(projectWorkspaceRoot(project), projectGuestRoot(project), branch = branch, token = token)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Pushed branch '$branch' to remote") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Push failed: ${error.message?.lineSequence()?.lastOrNull()?.take(160)}") }
+                }
+            }
+            refreshGitState()
+        }
+    }
+
+    fun pullGitBranch() {
+        val project = _state.value.activeProject ?: return
+        val branch = _state.value.gitStatus?.currentBranch ?: "main"
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Pulling '$branch' from remote…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val token = getGitHubToken()
+            val result = gitManager.pull(projectWorkspaceRoot(project), projectGuestRoot(project), branch = branch, token = token)
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    _state.update { it.copy(toastMessage = "Pulled updates for '$branch'") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "Pull failed: ${error.message?.lineSequence()?.lastOrNull()?.take(160)}") }
+                }
+            }
+            refreshGitState()
+            refreshProjectFiles()
+        }
+    }
+
+    fun selectGitCommit(commit: com.jarves.mh.model.GitCommit?) {
+        val project = _state.value.activeProject
+        if (project == null || commit == null) {
+            _state.update { it.copy(selectedGitCommit = null, selectedGitCommitDiffs = emptyList()) }
+            return
+        }
+        _state.update { it.copy(selectedGitCommit = commit) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val diffs = gitManager.commitDiff(projectWorkspaceRoot(project), projectGuestRoot(project), commit.hash).getOrNull().orEmpty()
+            withContext(Dispatchers.Main) {
+                if (_state.value.selectedGitCommit?.hash == commit.hash) {
+                    _state.update { it.copy(selectedGitCommitDiffs = diffs) }
+                }
+            }
+        }
+    }
+
+    fun createGitHubPullRequest(title: String, body: String, base: String) {
+        val project = _state.value.activeProject ?: return
+        val token = getGitHubToken()
+        if (token.isNullOrBlank()) {
+            _state.update { it.copy(toastMessage = "Connect GitHub in Settings first") }
+            return
+        }
+        val currentBranch = _state.value.gitStatus?.currentBranch ?: "main"
+        _state.update { it.copy(gitOperationRunning = true, gitOperationMessage = "Creating Pull Request on GitHub…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val remotes = gitManager.getRemotes(projectWorkspaceRoot(project), projectGuestRoot(project)).getOrNull().orEmpty()
+            val origin = remotes["origin"].orEmpty()
+            val repoFullName = extractGitHubRepoFullName(origin, project.description)
+            if (repoFullName.isNullOrBlank()) {
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(toastMessage = "Could not identify GitHub repository for this project", gitOperationRunning = false) }
+                }
+                return@launch
+            }
+            val result = runCatching {
+                gitHubClient.createPullRequest(token, repoFullName, title, body, currentBranch, base)
+            }
+            withContext(Dispatchers.Main) {
+                result.onSuccess { pr ->
+                    _state.update { it.copy(toastMessage = "Created PR #${pr.number}: ${pr.title}") }
+                }.onFailure { error ->
+                    _state.update { it.copy(toastMessage = "PR creation failed: ${error.message?.take(160)}") }
+                }
+            }
+            refreshGitState()
+        }
+    }
+
+    fun loadAndRefreshOrchestrator(project: Project) {
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            taskBoardManager.loadFromFile(root)
+            blackboardMemoryStore.loadFromFile(root)
+            agentInboxManager.loadFromFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+            }
+        }
+    }
+
+    fun refreshOrchestratorState() {
+        _state.update {
+            it.copy(
+                orchestratorTasks = taskBoardManager.getAllTasks(),
+                orchestratorAgents = godOrchestrator.getAllAgents(),
+                blackboardEntries = blackboardMemoryStore.getAllEntries(),
+                swarmAuditLogs = godOrchestrator.getAuditLog(),
+                circuitBreakerState = godOrchestrator.circuitBreaker,
+                swarmInboxMessages = agentInboxManager.getAllMessages(),
+                scheduledTasks = godOrchestrator.getAllScheduledTasks(),
+            )
+        }
+    }
+
+    fun decomposeSwarmGoal(goal: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            godOrchestrator.decomposeGoal(goal)
+            taskBoardManager.saveToFile(root)
+            blackboardMemoryStore.saveToFile(root)
+            agentInboxManager.saveToFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+                _state.update { it.copy(toastMessage = "GOD Orchestrator decomposed goal into tasks") }
+            }
+        }
+    }
+
+    fun createSwarmTask(
+        title: String,
+        description: String,
+        priority: com.jarves.mh.model.TaskPriority,
+        assignedAgentId: String?,
+        dependencyTaskIds: List<String>,
+    ) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            taskBoardManager.createTask(
+                title = title,
+                description = description,
+                priority = priority,
+                assignedAgentId = assignedAgentId,
+                dependencyTaskIds = dependencyTaskIds,
+            )
+            taskBoardManager.saveToFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+            }
+        }
+    }
+
+    fun moveSwarmTaskStatus(taskId: String, newStatus: com.jarves.mh.model.TaskStatus) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            val res = taskBoardManager.updateTaskStatus(taskId, newStatus)
+            if (res.isFailure) {
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(toastMessage = res.exceptionOrNull()?.message ?: "Cannot move task") }
+                }
+            } else {
+                if (newStatus == com.jarves.mh.model.TaskStatus.DONE) {
+                    godOrchestrator.onTaskCompleted(taskId)
+                    agentInboxManager.saveToFile(root)
+                }
+                taskBoardManager.saveToFile(root)
+                withContext(Dispatchers.Main) {
+                    refreshOrchestratorState()
+                }
+            }
+        }
+    }
+
+    fun assignSwarmTask(taskId: String, agentId: String?) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val agent = agentId?.let { godOrchestrator.getAgent(it) }
+        viewModelScope.launch(Dispatchers.IO) {
+            taskBoardManager.assignAgent(taskId, agentId, agent?.name ?: "Unassigned")
+            taskBoardManager.saveToFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+            }
+        }
+    }
+
+    fun resetSwarmCircuitBreaker() {
+        godOrchestrator.resetCircuitBreaker()
+        refreshOrchestratorState()
+        _state.update { it.copy(toastMessage = "Swarm circuit breaker reset to normal") }
+    }
+
+    fun sendSwarmDirectMessage(fromAgentId: String, toAgentId: String, body: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            agentInboxManager.sendMessage(
+                fromAgentId = fromAgentId,
+                toAgentId = toAgentId,
+                type = com.jarves.mh.model.AgentMessageType.QUERY,
+                subject = "Direct Message",
+                content = body,
+            )
+            agentInboxManager.saveToFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+            }
+        }
+    }
+
+    fun addSwarmBlackboardEntry(key: String, category: String, value: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        viewModelScope.launch(Dispatchers.IO) {
+            blackboardMemoryStore.putEntry(
+                key = key,
+                category = category,
+                value = value,
+                authorAgentId = "user",
+                authorRole = com.jarves.mh.model.AgentRole.GOD_ORCHESTRATOR,
+            )
+            blackboardMemoryStore.saveToFile(root)
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+            }
+        }
+    }
+
+    fun sendElementContextToChat(elementContext: String) {
+        _state.update {
+            it.copy(
+                designModePromptDraft = elementContext,
+                toastMessage = "Element context copied to chat draft",
+            )
+        }
+    }
+
+    fun consumeDesignModeDraft(): String? {
+        val draft = _state.value.designModePromptDraft
+        if (draft != null) {
+            _state.update { it.copy(designModePromptDraft = null) }
+        }
+        return draft
+    }
+
+    fun createScheduledTask(
+        title: String,
+        description: String,
+        intervalMinutes: Int,
+        isRecurring: Boolean,
+        targetAgentId: String,
+    ) {
+        godOrchestrator.addScheduledTask(title, description, intervalMinutes, isRecurring, targetAgentId)
+        refreshOrchestratorState()
+        _state.update { it.copy(toastMessage = "Task schedule created") }
+    }
+
+    fun toggleScheduledTask(id: String) {
+        godOrchestrator.toggleScheduledTask(id)
+        refreshOrchestratorState()
+    }
+
+    fun deleteScheduledTask(id: String) {
+        godOrchestrator.removeScheduledTask(id)
+        refreshOrchestratorState()
+    }
+
+    fun mergeWorktreeBranch(branchName: String) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val res = gitManager.mergeBranch(projectWorkspaceRoot(project), projectGuestRoot(project), branchName)
+            withContext(Dispatchers.Main) {
+                res.onSuccess {
+                    _state.update { it.copy(toastMessage = "Merged branch '$branchName' into main successfully") }
+                }.onFailure { err ->
+                    _state.update { it.copy(toastMessage = "Merge failed: ${err.message?.take(160)}") }
+                }
+            }
+            refreshGitState()
+        }
+    }
+
+    private fun getGitHubToken(): String? {
+        val cliToken = if (installer.isGitHubCliInstalled()) {
+            runCatching {
+                val (exit, output) = runGitHubCli(listOf("auth", "token"))
+                output.lineSequence().lastOrNull { it.isNotBlank() }?.trim().takeIf { exit == 0 && !it.isNullOrBlank() }
+            }.getOrNull()
+        } else null
+        return cliToken ?: vault.get("GITHUB") ?: vault.get("GITHUB_TOKEN")
+    }
+
+    private fun extractGitHubRepoFullName(remoteUrl: String, description: String): String? {
+        if (description.startsWith("GitHub · ")) {
+            return description.removePrefix("GitHub · ").trim()
+        }
+        val match = Regex("""github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git|/)?$""").find(remoteUrl)
+        return match?.groupValues?.get(1)
+    }
+
 
     private fun isNoisyRuntimeItem(item: ActivityItem): Boolean {
         val combined = "${item.title} ${item.detail}"

@@ -82,9 +82,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarves.mh.ui.theme.AppThemeMode
+import com.jarves.mh.ui.theme.NeoLime
+import com.jarves.mh.ui.theme.NeoBlack
+import com.jarves.mh.ui.theme.NeoDarkBorder
+import com.jarves.mh.ui.theme.neoShadow
+import com.jarves.mh.ui.theme.neoTactile
+import com.jarves.mh.ui.theme.neoBounce
+import com.jarves.mh.ui.theme.neoBorder
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 
@@ -186,11 +194,12 @@ fun TerminalScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(34.dp)
-                                .background(PocketOrange.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+                                .size(36.dp)
+                                .background(NeoLime, RoundedCornerShape(9.dp))
+                                .border(2.dp, if (themeMode == AppThemeMode.DARK) NeoDarkBorder else NeoBlack, RoundedCornerShape(9.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Default.Terminal, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Terminal, contentDescription = null, tint = NeoBlack, modifier = Modifier.size(20.dp))
                         }
                         Spacer(Modifier.width(11.dp))
                         Column(Modifier.weight(1f)) {
@@ -218,14 +227,14 @@ fun TerminalScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(34.dp)
                                     .background(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                        color = NeoLime,
                                         shape = RoundedCornerShape(9.dp),
                                     )
                                     .border(
-                                        width = 1.dp,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                                        width = 2.dp,
+                                        color = if (themeMode == AppThemeMode.DARK) NeoDarkBorder else NeoBlack,
                                         shape = RoundedCornerShape(9.dp),
                                     ),
                                 contentAlignment = Alignment.Center,
@@ -233,8 +242,8 @@ fun TerminalScreen(
                                 Icon(
                                     imageVector = Icons.Default.Terminal,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(17.dp),
+                                    tint = NeoBlack,
+                                    modifier = Modifier.size(19.dp),
                                 )
                             }
                             Spacer(Modifier.width(10.dp))
@@ -300,18 +309,19 @@ fun TerminalScreen(
                 AppThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
             val terminalBg = if (isDark) Color(0xFF090D14) else MaterialTheme.colorScheme.surface
-            val promptGreen = if (isDark) PocketGreen else Color(0xFF0D7A3E)
+            val promptGreen = NeoLime
             val commandTextColor = if (isDark) Color(0xFFF0F6FC) else MaterialTheme.colorScheme.onSurface
             val outputTextColor = if (isDark) Color(0xFFC9D1D9) else MaterialTheme.colorScheme.onSurface
             val emptyStateColor = if (isDark) Color(0xFF6E7681) else MaterialTheme.colorScheme.onSurfaceVariant
 
-            // Console output area
+            // Console output area with Neobrutal hard shadow and 2.dp border
             Surface(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
-                    .border(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
+                    .neoShadow(offsetX = 3.dp, offsetY = 3.dp, cornerRadius = 12.dp)
+                    .border(2.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(12.dp)),
                 color = terminalBg,
                 shape = RoundedCornerShape(12.dp),
             ) {
@@ -491,23 +501,32 @@ private fun TerminalKeyButton(
     fixedWidth: Boolean = false,
     onClick: () -> Unit,
 ) {
-    androidx.compose.material3.OutlinedButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-        modifier = Modifier.height(34.dp).then(if (fixedWidth) Modifier.width(78.dp) else Modifier),
-        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-            containerColor = if (active) PocketOrange.copy(alpha = 0.18f) else Color.Transparent,
-            contentColor = if (active) PocketOrange else MaterialTheme.colorScheme.onSurface,
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (active) PocketOrange else MaterialTheme.colorScheme.outlineVariant,
-        ),
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (active) NeoLime else if (isDark) NeoDarkBorder else NeoBlack
+    val bgColor = if (active) NeoLime else if (isDark) Color(0xFF1B2028) else Color(0xFFFFFFFF)
+    val textColor = if (active) NeoBlack else if (isDark) Color(0xFFF8FAFC) else NeoBlack
+
+    Box(
+        modifier = Modifier
+            .height(34.dp)
+            .then(if (fixedWidth) Modifier.width(78.dp) else Modifier)
+            .neoTactile(
+                shadowOffset = 2.dp,
+                pressedOffset = 0.5.dp,
+                cornerRadius = 8.dp,
+                onClick = onClick,
+            )
+            .background(bgColor, RoundedCornerShape(8.dp))
+            .border(1.5.dp, borderColor, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (active) "$label ✓" else label,
+            text = if (active) "$label ✓" else label,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            color = textColor,
             maxLines = 1,
         )
     }
@@ -515,14 +534,19 @@ private fun TerminalKeyButton(
 
 @Composable
 private fun TerminalIconKeyButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .neoBounce(pressedScale = 0.88f, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp))
     }
 }
 
 @Composable
 private fun TerminalCommandPrompt(promptPath: String, command: String, isDark: Boolean = true) {
-    val promptGreen = if (isDark) PocketGreen else Color(0xFF0D7A3E)
+    val promptGreen = NeoLime
     val commandColor = if (isDark) Color(0xFFF0F6FC) else MaterialTheme.colorScheme.onSurface
     val promptText = remember(promptPath, command, isDark) {
         buildAnnotatedString {

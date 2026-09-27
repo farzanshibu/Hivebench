@@ -88,6 +88,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarves.mh.data.ApiKeyInfo
@@ -104,6 +105,17 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.runtime.AntigravityAuthStatus
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketOrange
+import com.jarves.mh.ui.theme.NeoLime
+import com.jarves.mh.ui.theme.NeoBlack
+import com.jarves.mh.ui.theme.NeoDarkBorder
+import com.jarves.mh.ui.theme.neoShadow
+import com.jarves.mh.ui.theme.neoTactile
+import com.jarves.mh.ui.theme.neoBounce
+import com.jarves.mh.ui.theme.neoBorder
+import com.jarves.mh.ui.theme.PulsingDot
+import com.jarves.mh.ui.theme.NeoBadge
+import com.jarves.mh.ui.theme.NeoButton
+import com.jarves.mh.ui.theme.NeoCard
 import kotlinx.coroutines.launch
 
 private data class KeyConnectionStatus(
@@ -174,6 +186,8 @@ fun AgentScreen(
     onSetAntigravityModel: (String) -> Unit = {},
     onSetAntigravityEffort: (String) -> Unit = {},
 ) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
     val scope = rememberCoroutineScope()
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
@@ -306,7 +320,7 @@ fun AgentScreen(
         when (state.apiPingStatus) {
             ApiPingStatus.OK -> Triple(Color(0xFF58C9A3), "Online", Color(0xFF58C9A3).copy(alpha = 0.13f))
             ApiPingStatus.FAILED -> Triple(MaterialTheme.colorScheme.error, "Attention", MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-            ApiPingStatus.PINGING -> Triple(PocketOrange, "Testing…", PocketOrange.copy(alpha = 0.13f))
+            ApiPingStatus.PINGING -> Triple(NeoLime, "Testing…", NeoLime.copy(alpha = 0.13f))
             ApiPingStatus.IDLE -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "Not tested", MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
         }
     }
@@ -362,47 +376,45 @@ fun AgentScreen(
                     ) {
                         items(filteredAntigravityModels, key = { it }) { modelId ->
                             val isSelected = state.antigravityModel == modelId
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) PocketOrange.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) PocketOrange.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                                ),
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .neoShadow(offsetX = if (isSelected) 3.dp else 2.dp, offsetY = if (isSelected) 3.dp else 2.dp, cornerRadius = 14.dp)
+                                    .background(
+                                        if (isSelected) NeoLime.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .border(
+                                        if (isSelected) 2.dp else 1.5.dp,
+                                        if (isSelected) NeoLime else borderColor.copy(alpha = 0.6f),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .neoTactile(cornerRadius = 14.dp, shadowOffset = 2.dp) {
                                         onSetAntigravityModel(modelId)
                                         showAntigravityModelSheet = false
-                                    },
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                             ) {
                                 Row(
-                                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 formatAntigravityModelName(modelId),
-                                                fontWeight = FontWeight.SemiBold,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 14.sp,
-                                                color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) NeoLime else MaterialTheme.colorScheme.onSurface,
                                             )
                                             val tier = formatAntigravityModelTier(modelId)
                                             if (tier.isNotEmpty()) {
                                                 Spacer(Modifier.width(8.dp))
-                                                Surface(
-                                                    color = if (isSelected) PocketOrange.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                                                    shape = RoundedCornerShape(4.dp),
-                                                ) {
-                                                    Text(
-                                                        tier,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    )
-                                                }
+                                                NeoBadge(
+                                                    text = tier,
+                                                    color = if (isSelected) NeoLime else MaterialTheme.colorScheme.surfaceVariant,
+                                                    textColor = if (isSelected) NeoBlack else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
                                             }
                                         }
                                         Text(
@@ -446,7 +458,7 @@ fun AgentScreen(
                     }
                     IconButton(onClick = ::discoverModels, enabled = !isDiscovering) {
                         if (isDiscovering) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = PocketOrange)
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = NeoLime)
                         } else {
                             Icon(Icons.Default.Refresh, "Refresh models")
                         }
@@ -467,11 +479,11 @@ fun AgentScreen(
                 if (status != null) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (statusOk) PocketOrange.copy(alpha = 0.09f)
+                        color = if (statusOk) NeoLime.copy(alpha = 0.09f)
                         else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
                         border = BorderStroke(
                             1.dp,
-                            if (statusOk) PocketOrange.copy(alpha = 0.28f)
+                            if (statusOk) NeoLime.copy(alpha = 0.28f)
                             else MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -482,13 +494,13 @@ fun AgentScreen(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(15.dp),
                                     strokeWidth = 1.6.dp,
-                                    color = PocketOrange,
+                                    color = NeoLime,
                                 )
                             } else {
                                 Icon(
                                     if (statusOk) Icons.Default.Info else Icons.Default.Warning,
                                     contentDescription = null,
-                                    tint = if (statusOk) PocketOrange else MaterialTheme.colorScheme.error,
+                                    tint = if (statusOk) NeoLime else MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
@@ -523,7 +535,7 @@ fun AgentScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(Modifier.size(32.dp), color = PocketOrange, strokeWidth = 3.dp)
+                            CircularProgressIndicator(Modifier.size(32.dp), color = NeoLime, strokeWidth = 3.dp)
                             Spacer(Modifier.height(14.dp))
                             Text(
                                 "Discovering models from ${selectedKind.title}…",
@@ -542,8 +554,8 @@ fun AgentScreen(
                         if (modelSearch.isNotBlank()) {
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
-                                color = PocketOrange.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.5f)),
+                                color = NeoLime.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, NeoLime.copy(alpha = 0.5f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -556,25 +568,26 @@ fun AgentScreen(
                                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(Icons.Default.Check, null, tint = PocketOrange, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Check, null, tint = NeoLime, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text("Use custom model ID:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(modelSearch.trim(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PocketOrange)
+                                        Text(modelSearch.trim(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = NeoLime)
                                     }
                                 }
                             }
                         }
 
 
-                        Button(
+                        NeoButton(
                             onClick = ::discoverModels,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            buttonColor = NeoLime,
+                            contentColor = NeoBlack,
                         ) {
-                            Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = NeoBlack)
                             Spacer(Modifier.width(8.dp))
-                            Text("Discover Models from API")
+                            Text("Discover Models from API", fontWeight = FontWeight.Bold)
                         }
 
                         val recommended = remember(selectedKind) { defaultModelsForProvider(selectedKind) }
@@ -588,31 +601,36 @@ fun AgentScreen(
                             )
                             recommended.forEach { opt ->
                                 val isSelected = model == opt.id
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = if (isSelected) PocketOrange.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (isSelected) PocketOrange.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                                    ),
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
+                                        .neoShadow(offsetX = if (isSelected) 3.dp else 2.dp, offsetY = if (isSelected) 3.dp else 2.dp, cornerRadius = 14.dp)
+                                        .background(
+                                            if (isSelected) NeoLime.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .border(
+                                            if (isSelected) 2.dp else 1.5.dp,
+                                            if (isSelected) NeoLime else borderColor.copy(alpha = 0.6f),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .neoTactile(cornerRadius = 14.dp, shadowOffset = 2.dp) {
                                             model = opt.id
                                             modelSearch = ""
                                             showModels = false
-                                        },
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
                                 ) {
                                     Row(
-                                        Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Column(Modifier.weight(1f)) {
                                             Text(
                                                 opt.displayName,
-                                                fontWeight = FontWeight.SemiBold,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 14.sp,
-                                                color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) NeoLime else MaterialTheme.colorScheme.onSurface,
                                             )
                                             Text(
                                                 opt.id,
@@ -635,27 +653,28 @@ fun AgentScreen(
                     ) {
                         if (modelSearch.isNotBlank() && filteredModels.none { it.id.equals(modelSearch.trim(), ignoreCase = true) }) {
                             item {
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = PocketOrange.copy(alpha = 0.12f),
-                                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.5f)),
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
+                                        .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 14.dp)
+                                        .background(NeoLime.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+                                        .border(2.dp, NeoLime, RoundedCornerShape(14.dp))
+                                        .neoTactile(cornerRadius = 14.dp, shadowOffset = 2.dp) {
                                             model = modelSearch.trim()
                                             modelSearch = ""
                                             showModels = false
-                                        },
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
                                 ) {
                                     Row(
-                                        Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Icon(Icons.Default.Check, null, tint = PocketOrange, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Default.Check, null, tint = NeoBlack, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text("Use custom model ID:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            Text(modelSearch.trim(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PocketOrange)
+                                            Text(modelSearch.trim(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = if (isDark) NeoLime else NeoBlack)
                                         }
                                     }
                                 }
@@ -663,38 +682,43 @@ fun AgentScreen(
                         }
                         items(filteredModels, key = { it.id }) { option ->
                             val isSelected = model == option.id
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) PocketOrange.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) PocketOrange.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                                ),
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .neoShadow(offsetX = if (isSelected) 3.dp else 2.dp, offsetY = if (isSelected) 3.dp else 2.dp, cornerRadius = 14.dp)
+                                    .background(
+                                        if (isSelected) NeoLime.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .border(
+                                        if (isSelected) 2.dp else 1.5.dp,
+                                        if (isSelected) NeoLime else borderColor.copy(alpha = 0.6f),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .neoTactile(cornerRadius = 14.dp, shadowOffset = 2.dp) {
                                         model = option.id
                                         modelSearch = ""
                                         showModels = false
-                                    },
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                             ) {
                                 Row(
-                                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 option.displayName,
-                                                fontWeight = FontWeight.SemiBold,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 14.sp,
-                                                color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) NeoLime else MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                             if (option.isFree) {
                                                 Spacer(Modifier.width(6.dp))
-                                                Text("FREE", color = Color(0xFF58C99C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                NeoBadge(text = "FREE", color = NeoLime, textColor = NeoBlack)
                                             }
                                         }
                                         if (option.displayName != option.id) {
@@ -724,20 +748,20 @@ fun AgentScreen(
                 modifier = Modifier.padding(top = 4.dp),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                            modifier = Modifier.size(34.dp),
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 9.dp)
+                                .background(NeoLime, RoundedCornerShape(9.dp))
+                                .border(2.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(9.dp)),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.SmartToy,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.SmartToy,
+                                contentDescription = null,
+                                tint = NeoBlack,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
                         Spacer(Modifier.width(10.dp))
                         Column {
@@ -757,23 +781,28 @@ fun AgentScreen(
                     }
                 },
                 actions = {
-                    // Top Bar Live Status Pill
+                    // Top Bar Live Status Pill with Neobrutal styling & pulsing dot
                     Surface(
-                        color = pillBg,
+                        color = if (label == "Online") NeoLime.copy(alpha = 0.18f) else pillBg,
                         shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, dot.copy(alpha = 0.35f)),
+                        border = BorderStroke(1.5.dp, if (label == "Online") NeoLime else dot),
+                        modifier = Modifier.neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 50.dp),
                     ) {
                         Row(
-                            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.size(6.5.dp).background(dot, CircleShape))
+                            if (pillLoading || label == "Online") {
+                                PulsingDot(color = if (label == "Online") NeoLime else dot, size = 6.5.dp)
+                            } else {
+                                Box(Modifier.size(6.5.dp).background(dot, CircleShape))
+                            }
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 if (pillLoading) "Checking" else label,
-                                fontSize = 10.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = dot,
+                                color = if (label == "Online") (if (isDark) NeoLime else NeoBlack) else dot,
                             )
                         }
                     }
@@ -791,14 +820,15 @@ fun AgentScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ── 1. Compact 3-Way Segmented Engine Selector ──
+            // ── 1. Compact 3-Way Segmented Engine Selector with Neobrutal styling ──
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                        modifier = Modifier.fillMaxWidth(),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .neoShadow(offsetX = 3.dp, offsetY = 3.dp, cornerRadius = 16.dp)
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                            .border(2.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(16.dp)),
                     ) {
                         Row(
                             modifier = Modifier.padding(4.dp),
@@ -813,16 +843,28 @@ fun AgentScreen(
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
                                 }
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
-                                    border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)) else null,
+                                Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable(enabled = state.agentInstalling == null) {
-                                            viewedAgent = agent
-                                            if (isInstalled) onSelectAgent(agent)
-                                        },
+                                        .neoTactile(
+                                            enabled = state.agentInstalling == null,
+                                            shadowOffset = if (isSelected) 2.dp else 0.dp,
+                                            pressedOffset = 0.dp,
+                                            cornerRadius = 12.dp,
+                                            onClick = {
+                                                viewedAgent = agent
+                                                if (isInstalled) onSelectAgent(agent)
+                                            },
+                                        )
+                                        .background(
+                                            if (isSelected) NeoLime else Color.Transparent,
+                                            RoundedCornerShape(12.dp),
+                                        )
+                                        .then(
+                                            if (isSelected) Modifier.border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(12.dp))
+                                            else Modifier
+                                        ),
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     Box(
                                         modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp),
@@ -833,12 +875,12 @@ fun AgentScreen(
                                                 shortTitle,
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                 fontSize = 12.sp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (isSelected) NeoBlack else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                             )
                                             if (updateAvailable) {
-                                                Spacer(Modifier.width(3.dp))
-                                                Box(Modifier.size(5.dp).background(PocketOrange, CircleShape))
+                                                Spacer(Modifier.width(4.dp))
+                                                PulsingDot(color = if (isSelected) NeoBlack else NeoLime, size = 5.dp)
                                             }
                                         }
                                     }
@@ -849,26 +891,28 @@ fun AgentScreen(
 
                     if (state.agentInstalling == viewedAgent) {
                         Spacer(Modifier.height(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        NeoCard(
                             modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 14.dp,
+                            shadowOffset = 3.dp,
                         ) {
-                            Column(Modifier.padding(12.dp)) {
+                            Column(Modifier.padding(14.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
+                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.8.dp, color = NeoLime)
                                     Spacer(Modifier.width(8.dp))
                                     Text(
                                         state.agentMessage ?: "Installing agent binary…",
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
-                                Spacer(Modifier.height(6.dp))
+                                Spacer(Modifier.height(8.dp))
                                 LinearProgressIndicator(
                                     progress = { state.agentProgress.coerceIn(0f, 1f) },
                                     modifier = Modifier.fillMaxWidth(),
+                                    color = NeoLime,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                 )
                                 val downloaded = state.agentDownloadedBytes
                                 val total = state.agentTotalBytes
@@ -902,16 +946,15 @@ fun AgentScreen(
                         }
                     } else if (!viewedAgentInstalled) {
                         Spacer(Modifier.height(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                        NeoCard(
                             modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 16.dp,
+                            shadowOffset = 3.5.dp,
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Text(
                                     "${viewedAgent.title} is not installed",
-                                    fontSize = 15.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -922,11 +965,12 @@ fun AgentScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(Modifier.height(12.dp))
-                                Button(
+                                NeoButton(
                                     onClick = { onInstallAgent(viewedAgent) },
                                     enabled = state.agentInstalling == null,
+                                    buttonColor = NeoLime,
+                                    contentColor = NeoBlack,
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
                                 ) {
                                     Text("Install ${viewedAgent.title}", fontWeight = FontWeight.Bold)
                                 }
@@ -1125,12 +1169,13 @@ private fun AgentAntigravityCard(
 ) {
     val clipboard = LocalClipboardManager.current
     val auth = state.antigravityAuth
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
 
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+    NeoCard(
         modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 18.dp,
+        shadowOffset = 3.5.dp,
     ) {
         Column(
             Modifier.padding(16.dp),
@@ -1144,35 +1189,43 @@ private fun AgentAntigravityCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
-                        .background(Color(0xFF34A853).copy(alpha = 0.14f), RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0xFF34A853).copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
+                        .size(36.dp)
+                        .background(NeoLime, RoundedCornerShape(10.dp))
+                        .border(1.5.dp, borderColor, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("G", color = Color(0xFF34A853), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("G", color = NeoBlack, fontWeight = FontWeight.Black, fontSize = 16.sp)
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     val email = auth.accountEmail
                     Text(
                         email ?: if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected" else "Not signed in",
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
-                        fontSize = 11.sp,
-                        color = if (auth.status == AntigravityAuthStatus.SIGNED_IN) Color(0xFF2E9D72) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
+                            PulsingDot(color = NeoLime, size = 6.dp)
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
+                            fontSize = 11.sp,
+                            fontWeight = if (auth.status == AntigravityAuthStatus.SIGNED_IN) FontWeight.Bold else FontWeight.Normal,
+                            color = if (auth.status == AntigravityAuthStatus.SIGNED_IN) (if (isDark) NeoLime else NeoBlack) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
                     Text(
                         "Disconnect",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .clickable { onLogout() }
                             .padding(horizontal = 6.dp, vertical = 4.dp),
@@ -1183,16 +1236,17 @@ private fun AgentAntigravityCard(
             // Authentication actions if not signed in
             when (auth.status) {
                 AntigravityAuthStatus.STARTING, AntigravityAuthStatus.COMPLETING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = NeoLime)
                 }
                 AntigravityAuthStatus.AWAITING_CODE -> {
                     auth.authorizationUrl?.let { url ->
-                        OutlinedButton(
+                        NeoButton(
                             onClick = { clipboard.setText(AnnotatedString(url)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ) {
-                            Text("Copy Google Sign-in URL")
+                            Text("Copy Google Sign-in URL", fontWeight = FontWeight.SemiBold)
                         }
                     }
                     OutlinedTextField(
@@ -1203,29 +1257,35 @@ private fun AgentAntigravityCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                     )
-                    Button(
+                    NeoButton(
                         onClick = onSubmitCode,
                         enabled = code.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
                     ) {
-                        Text("Complete Sign-in")
+                        Text("Complete Sign-in", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
                 AntigravityAuthStatus.SIGNED_OUT, AntigravityAuthStatus.ERROR -> {
-                    Button(
+                    NeoButton(
                         onClick = onStartLogin,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        containerColor = NeoLime,
+                        contentColor = NeoBlack,
                     ) {
-                        Text(if (auth.status == AntigravityAuthStatus.ERROR) "Reconnect with Google" else "Sign in with Google")
+                        Text(
+                            if (auth.status == AntigravityAuthStatus.ERROR) "Reconnect with Google" else "Sign in with Google",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
                     }
                 }
                 AntigravityAuthStatus.SIGNED_IN -> {}
             }
 
             if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                HorizontalDivider(thickness = 1.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                 // Active Intelligence Model Tile
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -1236,7 +1296,7 @@ private fun AgentAntigravityCard(
                         Text(
                             "Active Intelligence Model",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
@@ -1247,25 +1307,29 @@ private fun AgentAntigravityCard(
                                 .padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
                         ) {
                             if (state.antigravityModelsLoading) {
-                                CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp)
+                                CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp, color = NeoLime)
                                 Spacer(Modifier.width(4.dp))
                             }
                             Text(
                                 "Sync",
                                 fontSize = 11.sp,
-                                color = PocketOrange,
-                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDark) NeoLime else NeoBlack,
+                                fontWeight = FontWeight.Bold,
                             )
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenModelSheet() },
+                            .neoTactile(
+                                shadowOffset = 2.5.dp,
+                                pressedOffset = 0.5.dp,
+                                cornerRadius = 14.dp,
+                                onClick = { onOpenModelSheet() },
+                            )
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+                            .border(1.5.dp, borderColor, RoundedCornerShape(14.dp)),
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -1273,15 +1337,16 @@ private fun AgentAntigravityCard(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
-                                    .background(PocketOrange.copy(alpha = 0.12f), RoundedCornerShape(9.dp)),
+                                    .size(34.dp)
+                                    .background(NeoLime, RoundedCornerShape(9.dp))
+                                    .border(1.dp, NeoBlack, RoundedCornerShape(9.dp)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     Icons.Default.AutoAwesome,
                                     contentDescription = null,
-                                    tint = PocketOrange,
-                                    modifier = Modifier.size(16.dp),
+                                    tint = NeoBlack,
+                                    modifier = Modifier.size(18.dp),
                                 )
                             }
                             Spacer(Modifier.width(10.dp))
@@ -1291,7 +1356,7 @@ private fun AgentAntigravityCard(
                                     Text(
                                         formatAntigravityModelName(currentModel),
                                         modifier = Modifier.weight(1f),
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
@@ -1315,7 +1380,7 @@ private fun AgentAntigravityCard(
                     }
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                HorizontalDivider(thickness = 1.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                 // Reasoning Depth (Effort) Segmented Capsule
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -1332,23 +1397,23 @@ private fun AgentAntigravityCard(
                         Text(
                             "Reasoning Depth",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
                             effortCaption,
                             fontSize = 11.sp,
-                            color = PocketOrange,
-                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) NeoLime else NeoBlack,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth(),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                            .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
                     ) {
                         Row(
                             modifier = Modifier.padding(3.dp),
@@ -1356,24 +1421,26 @@ private fun AgentAntigravityCard(
                         ) {
                             listOf("low", "medium", "high").forEach { effort ->
                                 val isSelected = state.antigravityEffort == effort
-                                Surface(
-                                    shape = RoundedCornerShape(9.dp),
-                                    color = if (isSelected) PocketOrange else Color.Transparent,
+                                Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable { onSetEffort(effort) },
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(vertical = 7.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            effort.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() },
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) Color(0xFF241107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        .neoTactile(
+                                            shadowOffset = if (isSelected) 2.dp else 0.dp,
+                                            pressedOffset = 0.dp,
+                                            cornerRadius = 9.dp,
+                                            onClick = { onSetEffort(effort) },
                                         )
-                                    }
+                                        .background(if (isSelected) NeoLime else Color.Transparent, RoundedCornerShape(9.dp))
+                                        .then(if (isSelected) Modifier.border(1.5.dp, NeoBlack, RoundedCornerShape(9.dp)) else Modifier),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        effort.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() },
+                                        modifier = Modifier.padding(vertical = 7.dp),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                        color = if (isSelected) NeoBlack else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
@@ -1382,24 +1449,24 @@ private fun AgentAntigravityCard(
             }
 
             if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                OutlinedButton(
+                NeoButton(
                     onClick = onTest,
                     enabled = state.apiPingStatus != ApiPingStatus.PINGING,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    borderColor = NeoLime,
+                    contentColor = if (isDark) NeoLime else NeoBlack,
                 ) {
                     if (state.apiPingStatus == ApiPingStatus.PINGING) {
-                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
+                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = NeoLime)
                         Spacer(Modifier.width(8.dp))
                     } else {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
+                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = if (isDark) NeoLime else NeoBlack)
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
                         if (state.apiPingStatus == ApiPingStatus.PINGING) "Testing connection…" else "Test connection",
-                        color = PocketOrange,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -1408,7 +1475,7 @@ private fun AgentAntigravityCard(
                         Icon(
                             if (state.apiPingStatus == ApiPingStatus.FAILED) Icons.Default.Warning else Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else Color(0xFF2E9D72),
+                            tint = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else NeoLime,
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.width(7.dp))
@@ -1478,11 +1545,10 @@ private fun AgentProviderCard(
     val activeKey = savedKeys.firstOrNull { it.isActive }
     val activeKeyStatus = activeKey?.let { keyConnectionStatuses[it.id] }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+    NeoCard(
         modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 18.dp,
+        shadowOffset = 3.5.dp,
     ) {
         Column(
             Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
@@ -1608,7 +1674,7 @@ private fun AgentProviderCard(
                         if (isDiscovering) "Discovering…" else if (models.isEmpty()) "Discover models" else "${models.size} models",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = PocketOrange,
+                        color = NeoLime,
                         modifier = Modifier.clickable(enabled = !isDiscovering, onClick = onDiscover).padding(6.dp),
                     )
                 }
@@ -1633,7 +1699,7 @@ private fun AgentProviderCard(
             if (status != null) {
                 Column(modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (statusOk) Icons.Default.Info else Icons.Default.Warning, null, tint = if (statusOk) PocketOrange else MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                        Icon(if (statusOk) Icons.Default.Info else Icons.Default.Warning, null, tint = if (statusOk) NeoLime else MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(7.dp))
                         Text(status, fontSize = 10.sp, lineHeight = 14.sp, color = if (statusOk) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
                     }
@@ -1697,7 +1763,7 @@ private fun AgentProviderCard(
                         Text(
                             if (addKeyExpanded) "Cancel" else "+ Add key",
                             fontSize = 11.sp,
-                            color = PocketOrange,
+                            color = NeoLime,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clickable { addKeyExpanded = !addKeyExpanded }.padding(6.dp),
                         )
@@ -1712,7 +1778,7 @@ private fun AgentProviderCard(
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Text(key.name, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                        Text(if (key.isActive) "Active" else "Tap to activate", fontSize = 10.sp, color = if (key.isActive) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (key.isActive) "Active" else "Tap to activate", fontSize = 10.sp, color = if (key.isActive) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     AgentSelectionDot(key.isActive)
                                     IconButton(onClick = { onRemoveKey(key.id) }) {
@@ -1762,31 +1828,32 @@ private fun AgentProviderCard(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                             )
-                            Button(
+                            NeoButton(
                                 onClick = { onAddKey(); addKeyExpanded = false },
                                 enabled = newKeyName.isNotBlank() && newApiKey.isNotBlank(),
+                                buttonColor = NeoLime,
+                                contentColor = NeoBlack,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                            ) { Text(if (selectedKind == ProviderKind.CLAUDE) "Save token" else "Save API key") }
+                            ) { Text(if (selectedKind == ProviderKind.CLAUDE) "Save token" else "Save API key", fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
+            Spacer(Modifier.height(14.dp))
+            NeoButton(
                 onClick = onValidate,
                 enabled = apiKey.isNotBlank() && !isDiscovering && !isValidating &&
                     (selectedKind == ProviderKind.CLAUDE || (baseUrl.isNotBlank() && model.isNotBlank())),
-                modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(13.dp),
-                border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
+                modifier = Modifier.fillMaxWidth(),
+                buttonColor = NeoLime,
+                contentColor = NeoBlack,
             ) {
                 if (isValidating) {
-                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
+                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = NeoBlack)
                     Spacer(Modifier.width(8.dp))
                 } else {
-                    Icon(if (selectedKind == ProviderKind.CLAUDE) Icons.Default.Check else Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
+                    Icon(if (selectedKind == ProviderKind.CLAUDE) Icons.Default.Check else Icons.Default.Refresh, null, Modifier.size(16.dp), tint = NeoBlack)
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
@@ -1796,8 +1863,8 @@ private fun AgentProviderCard(
                         selectedKind == ProviderKind.CLAUDE -> "Save subscription token"
                         else -> "Test connection"
                     },
-                    color = PocketOrange,
-                    fontWeight = FontWeight.SemiBold,
+                    color = NeoBlack,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -1814,15 +1881,20 @@ private fun PremiumSummaryRow(
     expanded: Boolean,
     onClick: () -> Unit,
 ) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(38.dp).background(PocketOrange.copy(alpha = 0.10f), RoundedCornerShape(11.dp)),
+            modifier = Modifier
+                .size(38.dp)
+                .background(NeoLime, RoundedCornerShape(11.dp))
+                .border(1.5.dp, borderColor, RoundedCornerShape(11.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = PocketOrange, modifier = Modifier.size(19.dp))
+            Icon(icon, null, tint = NeoBlack, modifier = Modifier.size(19.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -1883,10 +1955,10 @@ private fun AgentUpdateBlock(
                 if (state.agentUpdatesChecking) {
                     CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.6.dp)
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = NeoLime, modifier = Modifier.size(14.dp))
                 }
                 Spacer(Modifier.width(5.dp))
-                Text("Check updates", color = PocketOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Check updates", color = NeoLime, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -1898,30 +1970,40 @@ private fun AgentUpdateBlock(
                     (downloaded.toFloat() / total).coerceIn(0f, 1f)
                 } else state.agentUpdateProgress.coerceIn(0f, 1f)
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = PocketOrange.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.28f)),
+                NeoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 14.dp,
+                    shadowOffset = 2.5.dp,
                 ) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(agent.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Text("v${update.installedVersion} → v${update.latestVersion}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text("UPDATE", color = PocketOrange, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                            NeoBadge(
+                                text = "UPDATE",
+                                color = NeoLime,
+                                textColor = NeoBlack,
+                            )
                         }
                         if (updating) {
                             state.agentUpdateMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(
+                                progress = { fraction },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = NeoLime,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
                         } else {
-                            Button(
+                            NeoButton(
                                 onClick = { onUpdate(agent) },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = state.agentUpdating == null && state.agentInstalling == null,
-                                shape = RoundedCornerShape(10.dp),
+                                buttonColor = NeoLime,
+                                contentColor = NeoBlack,
                             ) {
-                                Text("Update ${agent.title}", fontSize = 12.sp)
+                                Text("Update ${agent.title}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -1964,11 +2046,15 @@ private fun AgentTypingDots(
 
 @Composable
 private fun AgentSelectionDot(selected: Boolean) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
     Box(
-        Modifier.size(22.dp).border(if (selected) 2.dp else 1.5.dp, if (selected) PocketOrange else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), CircleShape),
+        Modifier
+            .size(22.dp)
+            .border(if (selected) 2.dp else 1.5.dp, if (selected) NeoLime else borderColor.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Box(Modifier.size(10.dp).background(PocketOrange, CircleShape))
+        if (selected) Box(Modifier.size(10.dp).background(NeoLime, CircleShape))
     }
 }
 

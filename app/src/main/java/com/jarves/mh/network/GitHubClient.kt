@@ -96,6 +96,76 @@ class GitHubClient {
         return result.values.toList()
     }
 
+    fun listBranches(token: String, repoFullName: String): List<String> {
+        val array = getJson("https://api.github.com/repos/$repoFullName/branches?per_page=100", token) as JSONArray
+        return (0 until array.length()).map { index ->
+            array.getJSONObject(index).getString("name")
+        }
+    }
+
+    fun listPullRequests(token: String, repoFullName: String, state: String = "open"): List<com.jarves.mh.model.GitPullRequest> {
+        val array = getJson("https://api.github.com/repos/$repoFullName/pulls?state=$state&per_page=50", token) as JSONArray
+        return (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            com.jarves.mh.model.GitPullRequest(
+                number = item.getInt("number"),
+                title = item.getString("title"),
+                body = item.optString("body", ""),
+                headBranch = item.getJSONObject("head").getString("ref"),
+                baseBranch = item.getJSONObject("base").getString("ref"),
+                htmlUrl = item.getString("html_url"),
+                state = item.optString("state", "open"),
+                author = item.optJSONObject("user")?.optString("login", "").orEmpty(),
+                createdAt = item.optString("created_at", ""),
+            )
+        }
+    }
+
+    fun createPullRequest(
+        token: String,
+        repoFullName: String,
+        title: String,
+        body: String,
+        head: String,
+        base: String,
+    ): com.jarves.mh.model.GitPullRequest {
+        val payload = JSONObject().apply {
+            put("title", title)
+            put("body", body)
+            put("head", head)
+            put("base", base)
+        }
+        val json = postJson("https://api.github.com/repos/$repoFullName/pulls", payload, token) as JSONObject
+        return com.jarves.mh.model.GitPullRequest(
+            number = json.getInt("number"),
+            title = json.getString("title"),
+            body = json.optString("body", ""),
+            headBranch = json.getJSONObject("head").getString("ref"),
+            baseBranch = json.getJSONObject("base").getString("ref"),
+            htmlUrl = json.getString("html_url"),
+            state = json.optString("state", "open"),
+            author = json.optJSONObject("user")?.optString("login", "").orEmpty(),
+            createdAt = json.optString("created_at", ""),
+        )
+    }
+
+    private fun postJson(endpoint: String, payload: JSONObject, token: String): Any {
+        val body = payload.toString().toByteArray(Charsets.UTF_8)
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15_000
+            readTimeout = 25_000
+            doOutput = true
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+            setRequestProperty("User-Agent", "PocketDev-Android")
+        }
+        connection.outputStream.use { it.write(body) }
+        return readResponse(connection)
+    }
+
     private fun postForm(endpoint: String, values: Map<String, String>): JSONObject {
         val body = values.entries.joinToString("&") { (key, value) ->
             "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}" 
@@ -137,3 +207,4 @@ class GitHubClient {
         return if (text.trimStart().startsWith("[")) JSONArray(text) else JSONObject(text)
     }
 }
+

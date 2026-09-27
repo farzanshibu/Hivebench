@@ -87,6 +87,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarves.mh.BuildConfig
@@ -104,6 +105,16 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.runtime.AntigravityAuthStatus
 import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.PocketOrange
+import com.jarves.mh.ui.theme.NeoLime
+import com.jarves.mh.ui.theme.NeoBlack
+import com.jarves.mh.ui.theme.NeoDarkBorder
+import com.jarves.mh.ui.theme.neoShadow
+import com.jarves.mh.ui.theme.neoTactile
+import com.jarves.mh.ui.theme.neoBounce
+import com.jarves.mh.ui.theme.neoBorder
+import com.jarves.mh.ui.theme.PulsingDot
+import com.jarves.mh.ui.theme.NeoButton
+import com.jarves.mh.ui.theme.NeoCard
 import kotlinx.coroutines.launch
 
 private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, UPDATE_CHANNEL }
@@ -167,6 +178,8 @@ fun SettingsScreen(
         expanded = if (expanded == section) null else section
     }
 
+    val isDark = isSystemInDarkTheme()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -175,14 +188,14 @@ fun SettingsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(34.dp)
                                 .background(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                    color = NeoLime,
                                     shape = RoundedCornerShape(9.dp),
                                 )
                                 .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                                    width = 2.dp,
+                                    color = if (isDark) NeoDarkBorder else NeoBlack,
                                     shape = RoundedCornerShape(9.dp),
                                 ),
                             contentAlignment = Alignment.Center,
@@ -190,8 +203,8 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(17.dp),
+                                tint = NeoBlack,
+                                modifier = Modifier.size(19.dp),
                             )
                         }
                         Spacer(Modifier.width(10.dp))
@@ -249,13 +262,19 @@ fun SettingsScreen(
                             }
                             when {
                                 removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold)
+                                installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = NeoLime, fontWeight = FontWeight.Bold)
                                 installed && stack == DevStack.WEB -> Text("Included", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 installed -> TextButton(
                                     onClick = { stackPendingRemoval = stack },
                                     enabled = state.devStackInstalling == null,
                                 ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
-                                else -> OutlinedButton(onClick = { onInstallDevStack(stack) }, enabled = state.devStackInstalling == null) { Text("Add") }
+                                else -> NeoButton(
+                                    onClick = { onInstallDevStack(stack) },
+                                    enabled = state.devStackInstalling == null,
+                                    buttonColor = NeoLime,
+                                    contentColor = NeoBlack,
+                                    cornerRadius = 8.dp,
+                                ) { Text("Add", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                             }
                         }
                         if (installing) {
@@ -263,7 +282,7 @@ fun SettingsScreen(
                             LinearProgressIndicator(
                                 progress = { state.devStackProgress.coerceIn(0f, 1f) },
                                 modifier = Modifier.fillMaxWidth().height(7.dp),
-                                color = PocketOrange,
+                                color = NeoLime,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                             )
                             Spacer(Modifier.height(9.dp))
@@ -285,7 +304,7 @@ fun SettingsScreen(
                                                 Text(
                                                     "${formatTransferSpeed(speed)} · ${formatTransferEta(downloaded, total, speed)} left",
                                                     fontSize = 11.sp,
-                                                    color = PocketOrange,
+                                                    color = NeoLime,
                                                     fontFamily = FontFamily.Monospace,
                                                 )
                                             }
@@ -343,19 +362,24 @@ fun SettingsScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
+                    NeoButton(
                         onClick = { onClearTerminal(); terminalCleared = true },
                         modifier = Modifier.fillMaxWidth(),
+                        buttonColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(Icons.Default.DeleteSweep, null, Modifier.size(17.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text(if (terminalCleared) "Terminal history cleared" else "Clear terminal history")
+                        Text(if (terminalCleared) "Terminal history cleared" else "Clear terminal history", fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(
+                    Spacer(Modifier.height(8.dp))
+                    NeoButton(
                         onClick = { showReliabilityHelp = !showReliabilityHelp },
                         modifier = Modifier.fillMaxWidth(),
+                        buttonColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
-                        Text("Advanced runtime reliability")
+                        Text("Advanced runtime reliability", fontWeight = FontWeight.Bold)
                     }
                     AnimatedVisibility(showReliabilityHelp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -364,13 +388,15 @@ fun SettingsScreen(
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Button(
+                            NeoButton(
                                 onClick = {
                                     runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
                                         .onFailure { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Open Developer options") }
+                                buttonColor = NeoLime,
+                                contentColor = NeoBlack,
+                            ) { Text("Open Developer options", fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
@@ -392,7 +418,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Settings, null, Modifier.size(20.dp), tint = PocketOrange)
+                        Icon(Icons.Default.Settings, null, Modifier.size(20.dp), tint = NeoLime)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Mobile Harness", fontWeight = FontWeight.SemiBold)
@@ -463,34 +489,47 @@ private fun SettingsAccordion(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .neoShadow(offsetX = 3.dp, offsetY = 3.dp, cornerRadius = 16.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .border(2.dp, borderColor, RoundedCornerShape(16.dp)),
     ) {
         Column {
             Row(
-                Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), modifier = Modifier.size(40.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(NeoLime, RoundedCornerShape(10.dp))
+                        .border(1.5.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = NeoBlack)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Icon(
                     if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             AnimatedVisibility(expanded) {
                 Column {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(thickness = 1.5.dp, color = if (isDark) NeoDarkBorder else NeoBlack.copy(alpha = 0.15f))
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
                 }
             }
@@ -830,26 +869,40 @@ private fun ConnectionSettings(
 
 @Composable
 private fun SelectionDot(selected: Boolean) {
+    val isDark = isSystemInDarkTheme()
     Box(
-        Modifier.size(20.dp).border(if (selected) 2.dp else 1.dp, if (selected) PocketOrange else MaterialTheme.colorScheme.outline, CircleShape),
+        Modifier
+            .size(22.dp)
+            .border(2.dp, if (selected) NeoLime else (if (isDark) NeoDarkBorder else NeoBlack), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Box(Modifier.size(9.dp).background(PocketOrange, CircleShape))
+        if (selected) Box(Modifier.size(10.dp).background(NeoLime, CircleShape))
     }
 }
 
 @Composable
 private fun ModernThemeChoice(title: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) PocketOrange.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) PocketOrange else MaterialTheme.colorScheme.outlineVariant),
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (selected) NeoLime else if (isDark) NeoDarkBorder else NeoBlack
+    val bgColor = if (selected) NeoLime.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+
+    Box(
+        modifier = modifier
+            .neoTactile(
+                shadowOffset = if (selected) 3.dp else 2.dp,
+                pressedOffset = 0.5.dp,
+                cornerRadius = 12.dp,
+                onClick = onClick,
+            )
+            .background(bgColor, RoundedCornerShape(12.dp))
+            .border(if (selected) 2.dp else 1.5.dp, borderColor, RoundedCornerShape(12.dp))
+            .padding(vertical = 13.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(Modifier.padding(vertical = 13.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, title, Modifier.size(20.dp), tint = if (selected) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, title, Modifier.size(22.dp), tint = if (selected) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(5.dp))
-            Text(title, fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            Text(title, fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
         }
     }
 }
@@ -898,19 +951,23 @@ private fun DebugUpdateChannelSection(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(
+            NeoButton(
                 onClick = { onSave(url) },
                 enabled = url.startsWith("https://"),
                 modifier = Modifier.weight(1f),
+                buttonColor = NeoLime,
+                contentColor = NeoBlack,
             ) {
-                Text(if (isOverridden) "Replace" else "Use & check")
+                Text(if (isOverridden) "Replace" else "Use & check", fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(
+            NeoButton(
                 onClick = onClear,
                 enabled = isOverridden,
                 modifier = Modifier.weight(1f),
+                buttonColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
-                Text("Reset")
+                Text("Reset", fontWeight = FontWeight.Bold)
             }
         }
         if (isOverridden) {

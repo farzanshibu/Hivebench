@@ -120,8 +120,8 @@ private fun BulletBlock(item: MarkdownBlock.BulletItem, color: Color) {
         Box(
             modifier = Modifier
                 .padding(top = 8.dp, end = 8.dp)
-                .size(5.dp)
-                .background(PocketOrange, CircleShape),
+                .size(6.dp)
+                .background(com.jarves.mh.ui.theme.NeoLime, RoundedCornerShape(1.5.dp)),
         )
         Text(
             text = formatInlineMarkdown(item.text),
@@ -140,7 +140,7 @@ private fun NumberedBlock(item: MarkdownBlock.NumberedItem, color: Color) {
     ) {
         Text(
             text = item.number,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = PocketOrange),
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = com.jarves.mh.ui.theme.NeoLime),
             modifier = Modifier.padding(end = 6.dp),
         )
         Text(
@@ -159,14 +159,15 @@ private fun QuoteBlock(quote: MarkdownBlock.BlockQuote) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .height(24.dp)
-                .background(PocketOrange, RoundedCornerShape(2.dp)),
+                .width(4.dp)
+                .height(26.dp)
+                .background(com.jarves.mh.ui.theme.NeoLime, RoundedCornerShape(2.dp)),
         )
         Spacer(Modifier.width(10.dp))
         Text(
@@ -190,24 +191,31 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
         color = Color(0xFF14171E),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFF2A2E39), RoundedCornerShape(12.dp)),
+            .border(2.dp, Color(0xFF2E3440), RoundedCornerShape(12.dp)),
     ) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF1C202B))
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = block.language.ifBlank { "code" },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF9AA0A6),
-                    fontFamily = FontFamily.Monospace,
-                )
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = com.jarves.mh.ui.theme.NeoLime.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, com.jarves.mh.ui.theme.NeoLime.copy(alpha = 0.4f)),
+                ) {
+                    Text(
+                        text = block.language.ifBlank { "code" }.uppercase(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = com.jarves.mh.ui.theme.NeoLime,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val shellLanguage = block.language.lowercase() in setOf("", "bash", "sh", "shell", "zsh", "console", "terminal")
                     if (onRunCode != null && shellLanguage) {
@@ -218,7 +226,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                             Icon(
                                 Icons.Default.PlayArrow,
                                 contentDescription = "Run in project terminal",
-                                tint = PocketOrange,
+                                tint = com.jarves.mh.ui.theme.NeoLime,
                                 modifier = Modifier.size(18.dp),
                             )
                         }
@@ -237,7 +245,7 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                         Icon(
                             imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                             contentDescription = "Copy code",
-                            tint = if (copied) PocketOrange else Color(0xFF9AA0A6),
+                            tint = if (copied) com.jarves.mh.ui.theme.NeoLime else Color(0xFF9AA0A6),
                             modifier = Modifier.size(16.dp),
                         )
                     }
