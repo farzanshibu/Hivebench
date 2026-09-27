@@ -62,6 +62,14 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("github_login", "") ?: ""
         set(value) { preferences.edit().putString("github_login", value).apply() }
 
+    var autoApproveTools: Boolean
+        get() = preferences.getBoolean("auto_approve_tools", false)
+        set(value) { preferences.edit().putBoolean("auto_approve_tools", value).apply() }
+
+    var customRunnerCommand: String
+        get() = preferences.getString("custom_runner_command", "") ?: ""
+        set(value) { preferences.edit().putString("custom_runner_command", value).apply() }
+
     fun saveAgentConversation(agent: AgentKind, projectId: String, chatId: String, conversationId: String?) {
         val key = agentConversationKey(agent, projectId, chatId)
         preferences.edit().apply {

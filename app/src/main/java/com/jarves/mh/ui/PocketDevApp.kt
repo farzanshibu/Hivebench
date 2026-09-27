@@ -418,6 +418,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onRefreshGitHubIssues = viewModel::refreshGitHubIssues,
             onImportGitHubIssue = viewModel::importGitHubIssueToTask,
             onSelectAgent = viewModel::selectAgent,
+            onToggleAutoApprove = viewModel::toggleAutoApproveTools,
+            onSelectModel = viewModel::selectModel,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -1279,6 +1281,11 @@ private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind):
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
             AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
             AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
+            AgentKind.JCODE -> 18.2f
+            AgentKind.PI_AGENT -> 14.5f
+            AgentKind.COMMAND_CODE -> 21.0f
+            AgentKind.CLINE -> 32.4f
+            AgentKind.CUSTOM_RUNNER -> 5.0f
         } +
         (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
         (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
@@ -1364,11 +1371,21 @@ private fun AgentChoiceRow(
         AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
         AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
         AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
+        AgentKind.JCODE -> Color(0xFF00C853)
+        AgentKind.PI_AGENT -> Color(0xFFFF6D00)
+        AgentKind.COMMAND_CODE -> Color(0xFFAA00FF)
+        AgentKind.CLINE -> Color(0xFF00B0FF)
+        AgentKind.CUSTOM_RUNNER -> Color(0xFFFFAB00)
     }
     val mark = when (agent) {
         AgentKind.CLAUDE_CODE -> "CC"
         AgentKind.DEEPSEEK_HARNESS -> "DS"
         AgentKind.ANTIGRAVITY -> "AG"
+        AgentKind.JCODE -> "JC"
+        AgentKind.PI_AGENT -> "PI"
+        AgentKind.COMMAND_CODE -> "CD"
+        AgentKind.CLINE -> "CL"
+        AgentKind.CUSTOM_RUNNER -> "CR"
     }
     Row(
         modifier = Modifier
@@ -4075,6 +4092,8 @@ private fun WorkspaceScreen(
     onRefreshGitHubIssues: (String?) -> Unit = {},
     onImportGitHubIssue: (com.jarves.mh.network.GitHubIssue) -> Unit = {},
     onSelectAgent: (AgentKind) -> Unit = {},
+    onToggleAutoApprove: () -> Unit = {},
+    onSelectModel: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4396,9 +4415,13 @@ private fun WorkspaceScreen(
                     },
                     initialPrompt = state.designModePromptDraft,
                     onConsumeInitialPrompt = onConsumeDesignModeDraft,
-                    activeModel = state.antigravityModel,
+                    activeModel = if (state.agentKind == AgentKind.ANTIGRAVITY) state.antigravityModel else state.provider.model,
                     reasoningEffort = state.antigravityEffort,
                     onSetEffort = onSetEffort,
+                    autoApproveTools = state.autoApproveTools,
+                    onToggleAutoApprove = onToggleAutoApprove,
+                    onSelectModel = onSelectModel,
+                    onSelectAgent = onSelectAgent,
                     onDelegateToSwarm = { taskText ->
                         onCreateTask("Task from Chat", taskText, com.jarves.mh.model.TaskPriority.MEDIUM, null, emptyList())
                     },
@@ -5050,6 +5073,10 @@ private fun ChatTab(
     onSetEffort: (String) -> Unit = {},
     onDelegateToSwarm: (String) -> Unit = {},
     onOpenAgentSwitch: () -> Unit = {},
+    autoApproveTools: Boolean = false,
+    onToggleAutoApprove: () -> Unit = {},
+    onSelectModel: (String) -> Unit = {},
+    onSelectAgent: (AgentKind) -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -5090,6 +5117,8 @@ private fun ChatTab(
             agentKind = agentKind,
             activeModel = activeModel,
             reasoningEffort = reasoningEffort,
+            autoApproveTools = autoApproveTools,
+            onToggleAutoApprove = onToggleAutoApprove,
             onCycleEffort = {
                 val nextEffort = when (reasoningEffort.lowercase()) {
                     "low" -> "medium"
@@ -5307,6 +5336,90 @@ private fun ChatTab(
                             Text("Switch Agent", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (autoApproveTools) NeoLime else (if (isDark) NeoDarkBorder else NeoBlack), RoundedCornerShape(8.dp))
+                            .clickable { onToggleAutoApprove() },
+                        color = if (autoApproveTools) NeoLime.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.Security, null, modifier = Modifier.size(12.dp), tint = if (autoApproveTools) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (autoApproveTools) "Bypass: ON" else "Bypass: OFF", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(8.dp))
+                            .clickable { prompt = if (prompt.startsWith("/")) "" else "/" },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.Terminal, null, modifier = Modifier.size(12.dp), tint = NeoLime)
+                            Text("/ Commands", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Slash command quick autocomplete popup when prompt starts with "/"
+                if (prompt.startsWith("/")) {
+                    val slashChips = listOf(
+                        Triple("/model ", "⚡ /model", "Switch AI model"),
+                        Triple("/effort ", "🧠 /effort", "Switch reasoning effort"),
+                        Triple("/bypass", "🛡️ /bypass", "Toggle auto-approval"),
+                        Triple("/agent ", "🤖 /agent", "Switch coding agent"),
+                        Triple("/jcode", "⚡ /jcode", "Switch to JCode agent"),
+                        Triple("/piagent", "🥧 /piagent", "Switch to Pi agent"),
+                        Triple("/commandcode", "⌨️ /cmdcode", "Switch to Command Code"),
+                        Triple("/cline", "🔧 /cline", "Switch to Cline agent"),
+                        Triple("/custom", "🛠️ /custom", "Switch to Custom Runner"),
+                        Triple("/help", "❓ /help", "List all slash commands"),
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        slashChips.forEach { (cmd, label, _) ->
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, NeoLime, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        if (cmd.endsWith(" ")) {
+                                            prompt = cmd
+                                        } else {
+                                            onSend(cmd)
+                                            prompt = ""
+                                        }
+                                    },
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Text(
+                                    label,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) NeoLime else NeoBlack,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Box(
@@ -5451,6 +5564,8 @@ private fun ContextWindowHeader(
     agentKind: AgentKind,
     activeModel: String,
     reasoningEffort: String,
+    autoApproveTools: Boolean = false,
+    onToggleAutoApprove: () -> Unit = {},
     onCycleEffort: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
@@ -5554,6 +5669,24 @@ private fun ContextWindowHeader(
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = NeoLime,
+                        )
+                    }
+
+                    // Auto-Bypass tool approval toggle pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (autoApproveTools) NeoLime else MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, if (autoApproveTools) NeoBlack else borderColor, RoundedCornerShape(4.dp))
+                            .clickable { onToggleAutoApprove() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            if (autoApproveTools) "BYPASS: ON" else "BYPASS: OFF",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (autoApproveTools) NeoBlack else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

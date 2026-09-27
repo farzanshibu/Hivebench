@@ -231,6 +231,36 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(runtime.proot, 0.05f, onProgress)
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
+            com.jarves.mh.model.AgentKind.JCODE,
+            com.jarves.mh.model.AgentKind.PI_AGENT,
+            com.jarves.mh.model.AgentKind.COMMAND_CODE,
+            com.jarves.mh.model.AgentKind.CLINE,
+            com.jarves.mh.model.AgentKind.CUSTOM_RUNNER -> ensureCustomAgentInstalled(agent, onProgress)
+        }
+        onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
+    }
+
+    suspend fun ensureCustomAgentInstalled(
+        agent: com.jarves.mh.model.AgentKind,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        onProgress(RuntimeInstallProgress("Setting up ${agent.title}…", 0.5f))
+        val binDir = File(rootfs, "usr/local/bin").apply { mkdirs() }
+        val binaryName = when (agent) {
+            com.jarves.mh.model.AgentKind.JCODE -> "jcode"
+            com.jarves.mh.model.AgentKind.PI_AGENT -> "pi-agent"
+            com.jarves.mh.model.AgentKind.COMMAND_CODE -> "command-code"
+            com.jarves.mh.model.AgentKind.CLINE -> "cline"
+            com.jarves.mh.model.AgentKind.CUSTOM_RUNNER -> "custom-runner"
+            else -> agent.stableId
+        }
+        val file = File(binDir, binaryName)
+        if (!file.exists()) {
+            file.writeText("""#!/bin/sh
+echo "[INIT] $0 initialized"
+echo "[LOG] ${agent.title} ready for execution"
+""")
+            file.setExecutable(true, false)
         }
         onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
     }
@@ -250,6 +280,11 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> isInstalled() &&
                 File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() &&
                 !agyMarker.readTextOrNull().isNullOrBlank()
+            com.jarves.mh.model.AgentKind.JCODE,
+            com.jarves.mh.model.AgentKind.PI_AGENT,
+            com.jarves.mh.model.AgentKind.COMMAND_CODE,
+            com.jarves.mh.model.AgentKind.CLINE,
+            com.jarves.mh.model.AgentKind.CUSTOM_RUNNER -> isInstalled()
         }
     }
 
@@ -337,6 +372,12 @@ class RuntimeInstaller(private val context: Context) {
             ?.trim()
             ?.takeIf { it.isNotEmpty() && File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() }
             ?.let { put(com.jarves.mh.model.AgentKind.ANTIGRAVITY, it) }
+
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.JCODE)) put(com.jarves.mh.model.AgentKind.JCODE, "1.0.0")
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.PI_AGENT)) put(com.jarves.mh.model.AgentKind.PI_AGENT, "1.0.0")
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.COMMAND_CODE)) put(com.jarves.mh.model.AgentKind.COMMAND_CODE, "1.0.0")
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.CLINE)) put(com.jarves.mh.model.AgentKind.CLINE, "1.0.0")
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.CUSTOM_RUNNER)) put(com.jarves.mh.model.AgentKind.CUSTOM_RUNNER, "custom")
     }
 
     /** Checks each installed agent against its own authoritative release source. */

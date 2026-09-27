@@ -40,6 +40,7 @@ import com.jarves.mh.network.GitHubIssue
 import com.jarves.mh.network.LinearIssue
 import com.jarves.mh.network.LinearClient
 import com.jarves.mh.runtime.ClaudeRuntimeBridge
+import com.jarves.mh.runtime.CustomAgentRuntimeBridge
 import com.jarves.mh.runtime.DshRuntimeBridge
 import com.jarves.mh.runtime.AgentRegistry
 import com.jarves.mh.runtime.AgentUpdateInfo
@@ -292,13 +293,15 @@ data class AppUiState(
     val githubIssues: List<GitHubIssue> = emptyList(),
     val githubIssuesLoading: Boolean = false,
     val githubRepoOverride: String? = null,
+    val autoApproveTools: Boolean = false,
+    val customRunnerCommand: String = "",
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
     val linearClient = LinearClient()
-    private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+    private val claudeRuntime = ClaudeRuntimeBridge(application, autoApproveTools = { _state.value.autoApproveTools }) { profile -> vault.get(profile.kind.name) }
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
     private val gitRunner = com.jarves.mh.git.GitCommandRunner(application, installer)
@@ -324,7 +327,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
         },
     )
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
+    private val jcodeRuntime = CustomAgentRuntimeBridge(
+        application,
+        AgentKind.JCODE,
+        model = { if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model },
+        effort = { _state.value.antigravityEffort },
+        autoApproveTools = { _state.value.autoApproveTools },
+    ) { profile -> vault.get(profile.kind.name) }
+    private val piAgentRuntime = CustomAgentRuntimeBridge(
+        application,
+        AgentKind.PI_AGENT,
+        model = { if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model },
+        effort = { _state.value.antigravityEffort },
+        autoApproveTools = { _state.value.autoApproveTools },
+    ) { profile -> vault.get(profile.kind.name) }
+    private val commandCodeRuntime = CustomAgentRuntimeBridge(
+        application,
+        AgentKind.COMMAND_CODE,
+        model = { if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model },
+        effort = { _state.value.antigravityEffort },
+        autoApproveTools = { _state.value.autoApproveTools },
+    ) { profile -> vault.get(profile.kind.name) }
+    private val clineRuntime = CustomAgentRuntimeBridge(
+        application,
+        AgentKind.CLINE,
+        model = { if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model },
+        effort = { _state.value.antigravityEffort },
+        autoApproveTools = { _state.value.autoApproveTools },
+    ) { profile -> vault.get(profile.kind.name) }
+    private val customRunnerRuntime = CustomAgentRuntimeBridge(
+        application,
+        AgentKind.CUSTOM_RUNNER,
+        model = { if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model },
+        effort = { _state.value.antigravityEffort },
+        autoApproveTools = { _state.value.autoApproveTools },
+        customCommand = { _state.value.customRunnerCommand },
+    ) { profile -> vault.get(profile.kind.name) }
+    private val agentRegistry = AgentRegistry.builtIns(
+        claudeRuntime,
+        dshRuntime,
+        antigravityRuntime,
+        jcodeRuntime,
+        piAgentRuntime,
+        commandCodeRuntime,
+        clineRuntime,
+        customRunnerRuntime,
+    )
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private fun appUpdater(): AppUpdater = AppUpdater(
@@ -380,6 +428,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
+            autoApproveTools = preferences.autoApproveTools,
+            customRunnerCommand = preferences.customRunnerCommand,
         ),
     )
 
@@ -3075,7 +3125,207 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return clean.ifBlank { "attachment-${UUID.randomUUID().toString().take(8)}" }
     }
 
+    fun selectModel(modelName: String) {
+        val clean = modelName.trim()
+        if (_state.value.agentKind == AgentKind.ANTIGRAVITY) {
+            setAntigravityModel(clean)
+        } else {
+            val updated = _state.value.provider.copy(model = clean)
+            preferences.saveProvider(updated, _state.value.agentKind)
+            _state.update { it.copy(provider = updated, toastMessage = "Model switched to $clean") }
+        }
+    }
+
+    fun selectEffort(effortLevel: String) {
+        val norm = when (effortLevel.trim().lowercase()) {
+            "low", "l" -> "low"
+            "medium", "med", "m" -> "medium"
+            "high", "h" -> "high"
+            else -> effortLevel.trim().lowercase()
+        }
+        setAntigravityEffort(norm)
+        _state.update { it.copy(toastMessage = "Reasoning effort set to $norm") }
+    }
+
+    fun toggleAutoApproveTools(enabled: Boolean? = null) {
+        val newValue = enabled ?: !_state.value.autoApproveTools
+        preferences.autoApproveTools = newValue
+        _state.update {
+            it.copy(
+                autoApproveTools = newValue,
+                toastMessage = if (newValue) "Auto-bypass ENABLED (autonomous)" else "Auto-bypass DISABLED (requires approval)",
+            )
+        }
+    }
+
+    fun setCustomRunnerCommand(command: String) {
+        val clean = command.trim()
+        preferences.customRunnerCommand = clean
+        _state.update { it.copy(customRunnerCommand = clean, toastMessage = "Custom runner command saved") }
+    }
+
+    fun clearCurrentChat() {
+        val project = _state.value.activeProject ?: return
+        val chatId = _state.value.activeChatId ?: return
+        preferences.saveMessages(project.id, chatId, emptyList())
+        _state.update { it.copy(messages = emptyList(), liveProcess = emptyList(), activity = emptyList(), pendingApproval = null) }
+    }
+
+    fun executeSlashCommand(commandText: String): Boolean {
+        val trimmed = commandText.trim()
+        if (!trimmed.startsWith("/")) return false
+
+        val parts = trimmed.removePrefix("/").trim().split("\\s+".toRegex())
+        val cmd = parts.getOrNull(0)?.lowercase().orEmpty()
+        val arg = parts.drop(1).joinToString(" ").trim()
+
+        var feedback = ""
+        when (cmd) {
+            "model" -> {
+                if (arg.isNotBlank()) {
+                    selectModel(arg)
+                    feedback = "⚡ Model switched to **$arg**"
+                } else {
+                    val currentModel = if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model
+                    feedback = "ℹ️ Current model: **${currentModel.ifBlank { "default" }}**\nUsage: `/model <name>` (e.g. `/model claude-3-7-sonnet`, `/model gemini-2.5-pro`, `/model gpt-4o`, `/model deepseek-chat`)"
+                }
+            }
+            "effort" -> {
+                if (arg.isNotBlank()) {
+                    selectEffort(arg)
+                    feedback = "🧠 Reasoning effort set to **${arg.uppercase()}**"
+                } else {
+                    feedback = "ℹ️ Current effort: **${_state.value.antigravityEffort.uppercase()}**\nUsage: `/effort <low|medium|high>`"
+                }
+            }
+            "agent", "switch" -> {
+                if (arg.isNotBlank()) {
+                    val targetKind = AgentKind.entries.firstOrNull {
+                        it.stableId.equals(arg, ignoreCase = true) ||
+                            it.name.equals(arg, ignoreCase = true) ||
+                            it.title.contains(arg, ignoreCase = true)
+                    }
+                    if (targetKind != null) {
+                        selectAgent(targetKind)
+                        feedback = "🤖 Switched agent engine to **${targetKind.title}**"
+                    } else {
+                        feedback = "⚠️ Unknown agent '$arg'. Available agents:\n" +
+                            AgentKind.entries.joinToString("\n") { "• `${it.stableId}` (${it.title})" }
+                    }
+                } else {
+                    feedback = "ℹ️ Current agent: **${_state.value.agentKind.title}**\nUsage: `/agent <name>`\nAvailable: `jcode`, `pi-agent`, `command-code`, `cline`, `custom-runner`, `claude-code`, `deepseek-harness`, `antigravity`"
+                }
+            }
+            "jcode" -> {
+                selectAgent(AgentKind.JCODE)
+                feedback = "⚡ Switched to **JCode Agent** (multi-LLM coding engine)"
+            }
+            "piagent", "pi-agent", "pi" -> {
+                selectAgent(AgentKind.PI_AGENT)
+                feedback = "🥧 Switched to **Pi Agent** (autonomous reasoning engine)"
+            }
+            "commandcode", "command-code", "cmdcode" -> {
+                selectAgent(AgentKind.COMMAND_CODE)
+                feedback = "⌨️ Switched to **Command Code** (terminal-first CLI engine)"
+            }
+            "cline" -> {
+                selectAgent(AgentKind.CLINE)
+                feedback = "🔧 Switched to **Cline Agent** (autonomous coding CLI)"
+            }
+            "custom", "customrunner", "custom-runner" -> {
+                selectAgent(AgentKind.CUSTOM_RUNNER)
+                feedback = "🛠️ Switched to **Custom Agent Runner**"
+            }
+            "claude", "claudecode", "claude-code" -> {
+                selectAgent(AgentKind.CLAUDE_CODE)
+                feedback = "⚡ Switched to **Claude Code**"
+            }
+            "deepseek", "dsh", "deepseek-harness" -> {
+                selectAgent(AgentKind.DEEPSEEK_HARNESS)
+                feedback = "🐳 Switched to **DeepSeek Harness**"
+            }
+            "antigravity", "agy" -> {
+                selectAgent(AgentKind.ANTIGRAVITY)
+                feedback = "🚀 Switched to **Antigravity CLI**"
+            }
+            "bypass", "autoapprove", "auto-approve" -> {
+                val enable = when (arg.lowercase()) {
+                    "on", "enable", "true", "yes", "1" -> true
+                    "off", "disable", "false", "no", "0" -> false
+                    else -> !_state.value.autoApproveTools
+                }
+                toggleAutoApproveTools(enable)
+                feedback = if (enable) {
+                    "🛡️ **Tool Auto-Bypass: ENABLED**\nTools will run autonomously without interactive approval."
+                } else {
+                    "🛡️ **Tool Auto-Bypass: DISABLED**\nTools will request explicit confirmation before running."
+                }
+            }
+            "permission", "permissions" -> {
+                val enable = when (arg.lowercase()) {
+                    "auto", "bypass", "all" -> true
+                    "ask", "prompt", "manual", "strict" -> false
+                    else -> !_state.value.autoApproveTools
+                }
+                toggleAutoApproveTools(enable)
+                feedback = if (enable) {
+                    "🛡️ **Permission Mode: AUTO-BYPASS** (autonomous tool execution)"
+                } else {
+                    "🛡️ **Permission Mode: ASK** (interactive approval required)"
+                }
+            }
+            "clear" -> {
+                clearCurrentChat()
+                feedback = "🧹 Chat messages cleared."
+            }
+            "help" -> {
+                feedback = """
+                    ### 🛠️ PocketDev Slash Commands
+                    • `/model <name>` — Switch model (e.g. `claude-3-7-sonnet`, `gemini-2.5-pro`, `gpt-4o`)
+                    • `/effort <low|medium|high>` — Switch reasoning effort level
+                    • `/agent <name>` — Switch agent engine (`jcode`, `pi-agent`, `command-code`, `cline`, `custom-runner`, `claude-code`, `deepseek-harness`, `antigravity`)
+                    • Direct Agent Shortcuts: `/jcode`, `/piagent`, `/commandcode`, `/cline`, `/custom`, `/claude`, `/deepseek`, `/antigravity`
+                    • `/bypass [on|off]` — Toggle auto-bypass tool permissions
+                    • `/permission [auto|ask]` — Set permission approval policy
+                    • `/clear` — Clear current chat messages
+                    • `/status` — View current agent, model, effort, and permission settings
+                """.trimIndent()
+            }
+            "status" -> {
+                val currentModel = if (_state.value.agentKind == AgentKind.ANTIGRAVITY) _state.value.antigravityModel else _state.value.provider.model
+                val bypassStatus = if (_state.value.autoApproveTools) "ENABLED (Auto-Bypass)" else "DISABLED (Ask Approval)"
+                feedback = """
+                    ### 📊 Active Configuration
+                    • **Agent**: `${_state.value.agentKind.title}` (`${_state.value.agentKind.stableId}`)
+                    • **Model**: `${currentModel.ifBlank { "default" }}`
+                    • **Reasoning Effort**: `${_state.value.antigravityEffort.uppercase()}`
+                    • **Tool Auto-Bypass**: `$bypassStatus`
+                """.trimIndent()
+            }
+            else -> {
+                feedback = "❓ Unknown slash command `/$cmd`. Type `/help` for a list of available commands."
+            }
+        }
+
+        // Post the command and response into the chat transcript
+        _state.update {
+            it.copy(
+                messages = it.messages + listOf(
+                    ChatMessage(fromUser = true, text = trimmed),
+                    ChatMessage(fromUser = false, text = feedback),
+                ),
+                toastMessage = feedback.lines().firstOrNull()?.replace("*", "")?.take(60),
+            )
+        }
+        persistMessages()
+        return true
+    }
+
     fun sendPrompt(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.startsWith("/")) {
+            if (executeSlashCommand(trimmed)) return
+        }
         val project = state.value.activeProject ?: return
         if (_state.value.agentKind == AgentKind.ANTIGRAVITY &&
             _state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
@@ -4231,10 +4481,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(activity = listOf(ActivityItem(event.title, event.detail)) + current.activity),
                     ActivityItem(event.title, event.detail),
                 )
-                is RuntimeEvent.ToolRequested -> appendWorkItem(current.copy(
-                    pendingApproval = event.request,
-                    activity = listOf(ActivityItem("Waiting for approval", event.request.explanation, false)) + current.activity,
-                ), ActivityItem("Waiting for approval", event.request.explanation, false))
+                is RuntimeEvent.ToolRequested -> {
+                    if (_state.value.autoApproveTools) {
+                        viewModelScope.launch {
+                            activeRuntime().respondToApproval(event.request, true)
+                        }
+                        appendWorkItem(current.copy(
+                            activity = listOf(ActivityItem("Auto-approved ${event.request.toolName}", event.request.explanation, false)) + current.activity,
+                        ), ActivityItem("Auto-approved ${event.request.toolName}", event.request.explanation, false))
+                    } else {
+                        appendWorkItem(current.copy(
+                            pendingApproval = event.request,
+                            activity = listOf(ActivityItem("Waiting for approval", event.request.explanation, false)) + current.activity,
+                        ), ActivityItem("Waiting for approval", event.request.explanation, false))
+                    }
+                }
                 is RuntimeEvent.ToolApproved -> appendWorkItem(current.copy(
                     pendingApproval = null,
                     activity = listOf(ActivityItem("Applying approved changes", "Editing project files", false)) + current.activity,

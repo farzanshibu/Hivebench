@@ -45,6 +45,11 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             claude: RuntimeBridge,
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
+            jcode: RuntimeBridge,
+            piAgent: RuntimeBridge,
+            commandCode: RuntimeBridge,
+            cline: RuntimeBridge,
+            customRunner: RuntimeBridge,
         ) = AgentRegistry(
             listOf(
                 BuiltInAgentDriver(
@@ -78,6 +83,66 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.MODEL_PICKER,
                         AgentCapability.REASONING_EFFORT,
                         AgentCapability.RESUME,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.JCODE,
+                    jcode,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.REASONING_EFFORT,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.PI_AGENT,
+                    piAgent,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.REASONING_EFFORT,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.COMMAND_CODE,
+                    commandCode,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.REASONING_EFFORT,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.CLINE,
+                    cline,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.REASONING_EFFORT,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.CUSTOM_RUNNER,
+                    customRunner,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.REASONING_EFFORT,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
                     ),
                 ),
             ),

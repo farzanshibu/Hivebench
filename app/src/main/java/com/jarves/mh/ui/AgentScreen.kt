@@ -842,6 +842,11 @@ fun AgentScreen(
                                     AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
                                     AgentKind.CLAUDE_CODE -> "Claude Code"
+                                    AgentKind.JCODE -> "JCode"
+                                    AgentKind.PI_AGENT -> "PiAgent"
+                                    AgentKind.COMMAND_CODE -> "CmdCode"
+                                    AgentKind.CLINE -> "Cline"
+                                    AgentKind.CUSTOM_RUNNER -> "Custom"
                                 }
                                 Box(
                                     modifier = Modifier

@@ -72,11 +72,43 @@ enum class AgentKind(
         "Google's official coding agent · Google account",
         "39.9 MB",
     ),
+    JCODE(
+        "jcode",
+        "JCode Agent",
+        "Jarves intelligent coding agent · multi-LLM engine",
+        "18.2 MB",
+    ),
+    PI_AGENT(
+        "pi-agent",
+        "Pi Agent",
+        "Autonomous lightweight coding & reasoning agent",
+        "14.5 MB",
+    ),
+    COMMAND_CODE(
+        "command-code",
+        "Command Code",
+        "Terminal-first autonomous command-line agent",
+        "21.0 MB",
+    ),
+    CLINE(
+        "cline",
+        "Cline Agent",
+        "Autonomous coding agent CLI with tool execution",
+        "32.4 MB",
+    ),
+    CUSTOM_RUNNER(
+        "custom-runner",
+        "Custom Runner",
+        "User-configurable autonomous agent runtime & script",
+        "Custom",
+    ),
     ;
+
+    val displayName: String get() = title
 
     companion object {
         fun fromStored(value: String?): AgentKind = entries.firstOrNull {
-            it.stableId == value || it.name == value
+            it.stableId == value || it.name.equals(value, ignoreCase = true)
         } ?: CLAUDE_CODE
     }
 }

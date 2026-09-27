@@ -65,6 +65,7 @@ internal object ProviderRuntimeErrorDetector {
 
 class ClaudeRuntimeBridge(
     private val context: Context,
+    private val autoApproveTools: () -> Boolean = { false },
     private val secretFor: (ProviderProfile) -> String?,
 ) : RuntimeBridge {
     private val installer = RuntimeInstaller(context)
@@ -155,6 +156,9 @@ class ClaudeRuntimeBridge(
             val command = buildList {
                 add(launch.executable)
                 add("--bare")
+                if (autoApproveTools()) {
+                    add("--dangerously-skip-permissions")
+                }
                 add("-p")
                 add(contextPrompt)
                 add("--output-format")
@@ -369,6 +373,7 @@ class ClaudeRuntimeBridge(
         while (kotlin.coroutines.coroutineContext.isActive) {
             bridge.listFiles { file -> file.name.endsWith(".request") }.orEmpty().forEach { file ->
                 val approvalId = file.name.removeSuffix(".request")
+                if (pending.containsKey(approvalId)) return@forEach
                 runCatching {
                     val json = JSONObject(file.readText())
                     val toolName = json.optString("tool_name", "Tool")
@@ -380,13 +385,21 @@ class ClaudeRuntimeBridge(
                         .ifBlank { command.orEmpty() }
                         .ifBlank { "$toolName running in project" }
 
-                    Log.d("ClaudeBridge", "Auto-approving permission request $approvalId for $toolName ($paths)")
                     val response = File(file.parentFile, "$approvalId.response")
-                    response.writeText("allow")
-
-                    eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                    if (autoApproveTools()) {
+                        Log.d("ClaudeBridge", "Auto-approving permission request $approvalId for $toolName ($paths)")
+                        response.writeText("allow")
+                        file.delete()
+                        eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                    } else {
+                        val req = ToolRequest(sessionId, approvalId, toolName, explanation)
+                        pending[approvalId] = PendingPermission(req, response)
+                        eventBus.emit(RuntimeEvent.ToolRequested(sessionId, req))
+                    }
                 }.onFailure {
-                    File(file.parentFile, "$approvalId.response").writeText("allow")
+                    if (autoApproveTools()) {
+                        File(file.parentFile, "$approvalId.response").writeText("allow")
+                    }
                 }
             }
             delay(50)
