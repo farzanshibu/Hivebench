@@ -36,6 +36,8 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.ProviderApiClient
 import com.jarves.mh.network.GitHubRepository
+import com.jarves.mh.network.LinearIssue
+import com.jarves.mh.network.LinearClient
 import com.jarves.mh.runtime.ClaudeRuntimeBridge
 import com.jarves.mh.runtime.DshRuntimeBridge
 import com.jarves.mh.runtime.AgentRegistry
@@ -283,11 +285,15 @@ data class AppUiState(
     val activeSshProfile: SshServerProfile? = null,
     val customAgentTemplates: List<CustomAgentTemplate> = emptyList(),
     val agentQuotaUsages: List<AgentQuotaUsage> = emptyList(),
+    val linearApiKey: String? = null,
+    val linearIssues: List<LinearIssue> = emptyList(),
+    val linearLoading: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
+    val linearClient = LinearClient()
     private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
@@ -377,6 +383,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
         // the retired custom OAuth implementation and discover the real CLI status.
         vault.remove(LEGACY_GITHUB_TOKEN_KEY)
+        val storedLinearKey = vault.get("LINEAR_API_KEY")
+        if (!storedLinearKey.isNullOrBlank()) {
+            _state.update { it.copy(linearApiKey = storedLinearKey) }
+            loadLinearIssues(storedLinearKey)
+        }
         viewModelScope.launch { refreshGitHubConnection() }
         RuntimeSetupController.restore(application)
         viewModelScope.launch(Dispatchers.IO) {
@@ -3815,6 +3826,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 customAgentTemplates = it.customAgentTemplates + template,
                 toastMessage = "Dynamic agent '$name' registered.",
             )
+        }
+    }
+
+    // --- LINEAR INTEGRATION ---
+    fun setLinearApiKey(apiKey: String) {
+        val clean = apiKey.trim()
+        vault.put("LINEAR_API_KEY", clean)
+        _state.update { it.copy(linearApiKey = clean, toastMessage = "Linear API key saved") }
+        loadLinearIssues(clean)
+    }
+
+    fun refreshLinearIssues() {
+        val key = _state.value.linearApiKey ?: vault.get("LINEAR_API_KEY")
+        if (!key.isNullOrBlank()) {
+            loadLinearIssues(key)
+        } else {
+            _state.update { it.copy(toastMessage = "Please configure a Linear API key first") }
+        }
+    }
+
+    private fun loadLinearIssues(apiKey: String) {
+        _state.update { it.copy(linearLoading = true) }
+        viewModelScope.launch {
+            val result = linearClient.fetchAssignedIssues(apiKey)
+            withContext(Dispatchers.Main) {
+                result.onSuccess { issues ->
+                    _state.update {
+                        it.copy(
+                            linearIssues = issues,
+                            linearLoading = false,
+                            toastMessage = "Fetched ${issues.size} Linear issues",
+                        )
+                    }
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            linearLoading = false,
+                            toastMessage = "Linear fetch error: ${error.message?.take(100)}",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun importLinearIssueToTask(issue: LinearIssue) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val guestPath = projectGuestRoot(project)
+        val priority = when (issue.priority) {
+            1 -> com.jarves.mh.model.TaskPriority.URGENT
+            2 -> com.jarves.mh.model.TaskPriority.HIGH
+            3 -> com.jarves.mh.model.TaskPriority.MEDIUM
+            4 -> com.jarves.mh.model.TaskPriority.LOW
+            else -> com.jarves.mh.model.TaskPriority.MEDIUM
+        }
+        val branchName = "linear/${issue.identifier.lowercase()}"
+        viewModelScope.launch(Dispatchers.IO) {
+            taskBoardManager.createTask(
+                title = "[${issue.identifier}] ${issue.title}",
+                description = "${issue.description}\n\nLinear: ${issue.url}".trim(),
+                priority = priority,
+                assignedAgentId = "devon_coder",
+                assignedAgentName = "Devon Coder",
+                worktreeBranch = branchName,
+            )
+            taskBoardManager.saveToFile(root)
+
+            blackboardMemoryStore.putEntry(
+                key = "linear_${issue.identifier.lowercase()}",
+                category = "REQUIREMENT",
+                value = "Imported Linear issue [${issue.identifier}]: ${issue.title}. Assigned to Devon Coder on branch $branchName.",
+                authorAgentId = "system",
+                authorRole = com.jarves.mh.model.AgentRole.GOD_ORCHESTRATOR,
+            )
+            blackboardMemoryStore.saveToFile(root)
+
+            if (gitManager.isGitRepository(root, guestPath)) {
+                worktreeManager.createWorktree(root, guestPath, branchName, branchName)
+            }
+
+            withContext(Dispatchers.Main) {
+                refreshOrchestratorState()
+                refreshGitState()
+                _state.update {
+                    it.copy(
+                        toastMessage = "Imported [${issue.identifier}] into swarm with worktree $branchName",
+                    )
+                }
+            }
         }
     }
 

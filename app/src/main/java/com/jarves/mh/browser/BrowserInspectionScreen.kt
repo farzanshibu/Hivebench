@@ -244,6 +244,39 @@ fun BrowserInspectionScreen(
                     ) {
                         Icon(Icons.Default.Refresh, "Reload", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
                     }
+                    Spacer(Modifier.width(6.dp))
+                    IconButton(
+                        onClick = {
+                            val failedReqs = networkRequests.filter { it.status >= 400 }
+                            val errorLogs = consoleLogs.filter { it.level == ConsoleLogLevel.ERROR }
+                            val snapshot = buildString {
+                                appendLine("[BROWSER PAGE CONTEXT & SNAPSHOT]")
+                                appendLine("URL: ${activeUrl ?: address}")
+                                appendLine("Console Errors: ${errorLogs.size} | Total Logs: ${consoleLogs.size}")
+                                appendLine("Failed Network Calls: ${failedReqs.size} | Total Requests: ${networkRequests.size}")
+                                if (errorLogs.isNotEmpty()) {
+                                    appendLine("\nTop Console Errors:")
+                                    errorLogs.take(5).forEach { err ->
+                                        appendLine("- [${err.level.label}] ${err.message}${if (!err.source.isNullOrBlank()) " (${err.source}:${err.lineNumber ?: ""})" else ""}")
+                                    }
+                                }
+                                if (failedReqs.isNotEmpty()) {
+                                    appendLine("\nFailed Network Calls:")
+                                    failedReqs.take(5).forEach { req ->
+                                        appendLine("- [HTTP ${req.status}] ${req.method} ${req.url} (${req.durationMs}ms)")
+                                    }
+                                }
+                                appendLine("\nPlease inspect this browser session context and help diagnose and fix frontend issues.")
+                            }
+                            onSendContextToAgent(snapshot)
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(NeoLime, RoundedCornerShape(8.dp))
+                            .border(1.5.dp, NeoBlack, RoundedCornerShape(8.dp)),
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, "Ingest page snapshot into agent chat", Modifier.size(18.dp), tint = NeoBlack)
+                    }
                 }
             }
         }
@@ -356,10 +389,40 @@ fun BrowserInspectionScreen(
                             BrowserInspectorTab.CONSOLE -> ConsoleTabContent(
                                 logs = consoleLogs,
                                 onClear = { consoleLogs.clear() },
+                                onSendErrorsToAgent = {
+                                    val errorLogs = consoleLogs.filter { it.level == ConsoleLogLevel.ERROR }
+                                    val logsToReport = if (errorLogs.isNotEmpty()) errorLogs else consoleLogs
+                                    val report = buildString {
+                                        appendLine("[BROWSER CONSOLE ERROR REPORT]")
+                                        appendLine("URL: ${activeUrl ?: address}")
+                                        appendLine("Reported at: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
+                                        appendLine("Total errors: ${errorLogs.size} | Total logs: ${consoleLogs.size}")
+                                        appendLine("\nConsole Output:")
+                                        logsToReport.take(15).forEach { log ->
+                                            appendLine("[${log.level.label}] ${log.message}${if (!log.source.isNullOrBlank()) " (${log.source}:${log.lineNumber ?: ""})" else ""}")
+                                        }
+                                        appendLine("\nPlease analyze the stack traces and runtime errors above and resolve them in the code.")
+                                    }
+                                    onSendContextToAgent(report)
+                                },
                             )
                             BrowserInspectorTab.NETWORK -> NetworkTabContent(
                                 requests = networkRequests,
                                 onClear = { networkRequests.clear() },
+                                onSendFailedCallsToAgent = {
+                                    val failed = networkRequests.filter { it.status >= 400 }
+                                    val report = buildString {
+                                        appendLine("[BROWSER FAILED NETWORK REQUESTS]")
+                                        appendLine("URL: ${activeUrl ?: address}")
+                                        appendLine("Failed requests count: ${failed.size} | Total: ${networkRequests.size}")
+                                        appendLine("\nFailed Calls:")
+                                        failed.take(15).forEach { req ->
+                                            appendLine("- [HTTP ${req.status}] ${req.method} ${req.url} (${req.durationMs}ms)")
+                                        }
+                                        appendLine("\nPlease inspect these failed API/network requests, ensure backend routes or network handling is corrected.")
+                                    }
+                                    onSendContextToAgent(report)
+                                },
                             )
                             BrowserInspectorTab.ELEMENTS -> ElementsTabContent(
                                 element = selectedElement,
@@ -382,6 +445,7 @@ fun BrowserInspectionScreen(
 private fun ConsoleTabContent(
     logs: List<ConsoleLogEntry>,
     onClear: () -> Unit,
+    onSendErrorsToAgent: () -> Unit = {},
 ) {
     val isDark = isSystemInDarkTheme()
     val borderColor = if (isDark) NeoDarkBorder else NeoBlack
@@ -396,8 +460,25 @@ private fun ConsoleTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("${logs.size} log entries", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onClear) {
-                Icon(Icons.Default.DeleteSweep, "Clear console", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val errorCount = logs.count { it.level == ConsoleLogLevel.ERROR }
+                if (errorCount > 0) {
+                    Button(
+                        onClick = onSendErrorsToAgent,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252), contentColor = Color.White),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.5.dp, NeoBlack),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp),
+                    ) {
+                        Icon(Icons.Default.Warning, null, Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("INGEST $errorCount ERRORS", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Default.DeleteSweep, "Clear console", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         HorizontalDivider(color = borderColor)
@@ -476,6 +557,7 @@ private fun ConsoleTabContent(
 private fun NetworkTabContent(
     requests: List<NetworkRequestEntry>,
     onClear: () -> Unit,
+    onSendFailedCallsToAgent: () -> Unit = {},
 ) {
     val isDark = isSystemInDarkTheme()
     val borderColor = if (isDark) NeoDarkBorder else NeoBlack
@@ -489,8 +571,25 @@ private fun NetworkTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("${requests.size} network requests", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onClear) {
-                Icon(Icons.Default.DeleteSweep, "Clear network", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val failedCount = requests.count { it.status >= 400 }
+                if (failedCount > 0) {
+                    Button(
+                        onClick = onSendFailedCallsToAgent,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD600), contentColor = NeoBlack),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.5.dp, NeoBlack),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp),
+                    ) {
+                        Icon(Icons.Default.Wifi, null, Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("INGEST $failedCount FAILED", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Default.DeleteSweep, "Clear network", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         HorizontalDivider(color = borderColor)

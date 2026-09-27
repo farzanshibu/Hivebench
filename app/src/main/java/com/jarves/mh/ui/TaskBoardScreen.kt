@@ -107,6 +107,7 @@ import com.jarves.mh.model.CircuitBreakerState
 import com.jarves.mh.model.ScheduledTask
 import com.jarves.mh.model.TaskPriority
 import com.jarves.mh.model.TaskStatus
+import com.jarves.mh.network.LinearIssue
 import com.jarves.mh.orchestrator.SwarmAuditEvent
 import com.jarves.mh.ui.theme.NeoBlack
 import com.jarves.mh.ui.theme.NeoDarkBorder
@@ -122,6 +123,7 @@ enum class TaskBoardTab(val label: String, val icon: ImageVector) {
     SCHEDULE("Scheduler", Icons.Default.Schedule),
     SKILLS("Skills", Icons.Default.Tune),
     REVIEWS("Diff Review", Icons.Default.Search),
+    LINEAR("Linear", Icons.Default.Bookmark),
     AUDIT("Audit Log", Icons.Default.History),
 }
 
@@ -153,6 +155,12 @@ fun TaskBoardScreen(
     onCreateSkill: (String, String, com.jarves.mh.skills.SkillCategory, String) -> Unit = { _, _, _, _ -> },
     onToggleAnnotationResolved: (String) -> Unit = {},
     onRunAutomatedReview: (String) -> Unit = {},
+    linearIssues: List<LinearIssue> = emptyList(),
+    linearApiKey: String? = null,
+    linearLoading: Boolean = false,
+    onSaveLinearApiKey: (String) -> Unit = {},
+    onRefreshLinearIssues: () -> Unit = {},
+    onImportLinearIssue: (LinearIssue) -> Unit = {},
 ) {
     var currentTab by rememberSaveable { mutableStateOf(TaskBoardTab.KANBAN) }
     var goalInput by rememberSaveable { mutableStateOf("") }
@@ -336,6 +344,14 @@ fun TaskBoardScreen(
                     sessions = diffReviews,
                     onToggleResolved = onToggleAnnotationResolved,
                     onRunAutomatedReview = { onRunAutomatedReview("main") },
+                )
+                TaskBoardTab.LINEAR -> LinearIssuesContent(
+                    issues = linearIssues,
+                    apiKey = linearApiKey,
+                    loading = linearLoading,
+                    onSaveApiKey = onSaveLinearApiKey,
+                    onRefresh = onRefreshLinearIssues,
+                    onImportIssue = onImportLinearIssue,
                 )
                 TaskBoardTab.AUDIT -> AuditLogContent(auditLogs = auditLogs)
             }
@@ -2210,5 +2226,271 @@ private fun CreateSkillDialog(
             }
         },
     )
+}
+
+@Composable
+private fun LinearIssuesContent(
+    issues: List<LinearIssue>,
+    apiKey: String?,
+    loading: Boolean,
+    onSaveApiKey: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onImportIssue: (LinearIssue) -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val borderColor = if (isDark) NeoDarkBorder else NeoBlack
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(BorderStroke(1.dp, borderColor)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (!apiKey.isNullOrBlank()) NeoLime else Color(0xFFFF5252)),
+                        )
+                        Text(
+                            text = if (!apiKey.isNullOrBlank()) "LINEAR CONNECTED" else "LINEAR NOT CONNECTED",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Text(
+                        text = if (!apiKey.isNullOrBlank()) "${issues.size} assigned issues available" else "Connect API key to import backlog",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onRefresh, enabled = !apiKey.isNullOrBlank() && !loading) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = NeoLime)
+                        } else {
+                            Icon(Icons.Default.Refresh, "Refresh Linear issues", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                    Button(
+                        onClick = { showApiKeyDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (apiKey.isNullOrBlank()) NeoLime else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (apiKey.isNullOrBlank()) NeoBlack else MaterialTheme.colorScheme.onSurface,
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.5.dp, NeoBlack),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        Text(if (apiKey.isNullOrBlank()) "CONFIGURE KEY" else "KEY SET", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        }
+
+        if (apiKey.isNullOrBlank()) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.Bookmark, null, modifier = Modifier.size(48.dp), tint = NeoLime)
+                    Text("Connect to Linear", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "Enter your Linear personal API token (lin_api_...) to sync and assign engineering issues straight into Devon Coder worktrees.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Button(
+                        onClick = { showApiKeyDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.5.dp, NeoBlack),
+                    ) {
+                        Text("ENTER LINEAR API KEY", fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        } else if (issues.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("No Active Issues Found", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("No uncompleted issues found in your Linear workspace.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = onRefresh, colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack)) {
+                        Text("RETRY FETCH", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(issues, key = { it.id }) { issue ->
+                    val priorityColor = when (issue.priority) {
+                        1 -> Color(0xFFFF5252)
+                        2 -> Color(0xFFFF9100)
+                        3 -> Color(0xFFFFD600)
+                        else -> Color(0xFF40C4FF)
+                    }
+                    val priorityLabel = when (issue.priority) {
+                        1 -> "URGENT"
+                        2 -> "HIGH"
+                        3 -> "NORMAL"
+                        4 -> "LOW"
+                        else -> "NONE"
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.5.dp, borderColor),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(NeoLime)
+                                            .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(issue.identifier, fontSize = 10.sp, fontWeight = FontWeight.Black, color = NeoBlack)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(priorityColor)
+                                            .border(1.dp, NeoBlack, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(priorityLabel, fontSize = 9.sp, fontWeight = FontWeight.Black, color = if (issue.priority == 1) Color.White else NeoBlack)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(issue.stateName, fontSize = 9.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+
+                                if (issue.assigneeName != null) {
+                                    Text(issue.assigneeName, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+
+                            Text(
+                                text = issue.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+
+                            if (issue.description.isNotBlank()) {
+                                Text(
+                                    text = issue.description,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Branch: linear/${issue.identifier.lowercase()}",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                Button(
+                                    onClick = { onImportIssue(issue) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, NeoBlack),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp),
+                                ) {
+                                    Icon(Icons.Default.Add, null, Modifier.size(12.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("IMPORT TO SWARM", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showApiKeyDialog) {
+        var tempKey by remember { mutableStateOf(apiKey.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            title = { Text("Linear API Key", fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Generate a personal API token in Linear (Settings → Security & Access → Personal API Keys) and paste it below:",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = tempKey,
+                        onValueChange = { tempKey = it },
+                        label = { Text("API Key") },
+                        placeholder = { Text("lin_api_...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tempKey.isNotBlank()) {
+                            onSaveApiKey(tempKey.trim())
+                            showApiKeyDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeoLime, contentColor = NeoBlack),
+                ) {
+                    Text("SAVE KEY", fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 

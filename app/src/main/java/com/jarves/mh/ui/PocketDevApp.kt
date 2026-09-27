@@ -15,6 +15,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
+import android.speech.RecognizerIntent
 import com.jarves.mh.BuildConfig
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -99,6 +100,11 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.BatterySaver
@@ -406,6 +412,10 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onAddSshProfile = viewModel::addSshProfile,
             onSetActiveSshProfile = viewModel::setActiveSshProfile,
             onDeleteSshProfile = viewModel::deleteSshProfile,
+            onSaveLinearApiKey = viewModel::setLinearApiKey,
+            onRefreshLinearIssues = viewModel::refreshLinearIssues,
+            onImportLinearIssue = viewModel::importLinearIssueToTask,
+            onSelectAgent = viewModel::selectAgent,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -4057,11 +4067,28 @@ private fun WorkspaceScreen(
     onAddSshProfile: (String, String, Int, String, com.jarves.mh.ssh.SshAuthType, String) -> Unit = { _, _, _, _, _, _ -> },
     onSetActiveSshProfile: (String?) -> Unit = {},
     onDeleteSshProfile: (String) -> Unit = {},
+    onSaveLinearApiKey: (String) -> Unit = {},
+    onRefreshLinearIssues: () -> Unit = {},
+    onImportLinearIssue: (com.jarves.mh.network.LinearIssue) -> Unit = {},
+    onSelectAgent: (AgentKind) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val isAndroidProject = state.androidProjectDetected
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var showAgentPicker by rememberSaveable { mutableStateOf(false) }
+
+    if (showAgentPicker) {
+        AgentSwitchSheet(
+            selected = state.agentKind,
+            onSelect = { agent ->
+                showAgentPicker = false
+                onSelectAgent(agent)
+            },
+            onDismiss = { showAgentPicker = false },
+        )
+    }
+
     val exportProjectLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri -> if (uri != null) onExportProject(uri) },
@@ -4368,6 +4395,10 @@ private fun WorkspaceScreen(
                     activeModel = state.antigravityModel,
                     reasoningEffort = state.antigravityEffort,
                     onSetEffort = onSetEffort,
+                    onDelegateToSwarm = { taskText ->
+                        onCreateTask("Task from Chat", taskText, com.jarves.mh.model.TaskPriority.MEDIUM, null, emptyList())
+                    },
+                    onOpenAgentSwitch = { showAgentPicker = true },
                 )
                 WorkspaceTab.TASKS -> TaskBoardScreen(
                     tasks = state.orchestratorTasks,
@@ -4395,6 +4426,12 @@ private fun WorkspaceScreen(
                     onCreateSkill = onCreateSkill,
                     onToggleAnnotationResolved = onToggleAnnotationResolved,
                     onRunAutomatedReview = onRunAutomatedReview,
+                    linearIssues = state.linearIssues,
+                    linearApiKey = state.linearApiKey,
+                    linearLoading = state.linearLoading,
+                    onSaveLinearApiKey = onSaveLinearApiKey,
+                    onRefreshLinearIssues = onRefreshLinearIssues,
+                    onImportLinearIssue = onImportLinearIssue,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -5002,8 +5039,22 @@ private fun ChatTab(
     activeModel: String = "",
     reasoningEffort: String = "medium",
     onSetEffort: (String) -> Unit = {},
+    onDelegateToSwarm: (String) -> Unit = {},
+    onOpenAgentSwitch: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val view = LocalView.current
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+                if (!spoken.isNullOrBlank()) {
+                    prompt = if (prompt.isBlank()) spoken else "$prompt $spoken"
+                }
+            }
+        },
+    )
     // Keep the screen on while the selected agent is working in this chat. Released automatically
     // when the task finishes or the user leaves the chat tab.
     DisposableEffect(isRunning) {
@@ -5162,6 +5213,93 @@ private fun ChatTab(
                 val isDark = androidx.compose.foundation.isSystemInDarkTheme()
                 val inputBorder = if (canSend) NeoLime else (if (isDark) NeoDarkBorder else NeoBlack)
 
+                // Quick steering and delegation action row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(8.dp))
+                            .clickable {
+                                onSend("Continue executing the next step from where you left off.")
+                            },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.FastForward, null, modifier = Modifier.size(12.dp), tint = NeoLime)
+                            Text("Continue", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(8.dp))
+                            .clickable {
+                                prompt = "Steer direction: Focus on "
+                            },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(12.dp), tint = NeoLime)
+                            Text("Steer", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (prompt.isNotBlank()) {
+                                    onDelegateToSwarm(prompt)
+                                    prompt = ""
+                                }
+                            },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.Hub, null, modifier = Modifier.size(12.dp), tint = NeoLime)
+                            Text("Delegate Swarm", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isDark) NeoDarkBorder else NeoBlack, RoundedCornerShape(8.dp))
+                            .clickable(onClick = onOpenAgentSwitch),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Default.SmartToy, null, modifier = Modifier.size(12.dp), tint = NeoLime)
+                            Text("Switch Agent", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -5185,6 +5323,29 @@ private fun ChatTab(
                                 contentDescription = "Attach files",
                                 modifier = Modifier.size(20.dp),
                                 tint = if (pendingAttachments.isNotEmpty()) NeoLime else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak prompt for ${agentKind.title}…")
+                                }
+                                runCatching {
+                                    speechLauncher.launch(intent)
+                                }.onFailure {
+                                    Toast.makeText(context, "Voice dictation not available on this device", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = !isRunning,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Dictate prompt",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
 
