@@ -179,6 +179,10 @@ data class AppUiState(
     val agentTotalBytes: Long? = null,
     val agentBytesPerSecond: Long? = null,
     val agentUpdates: Map<AgentKind, AgentUpdateInfo> = emptyMap(),
+    /** Live token usage of the active agent session, keyed by session id. */
+    val agentSessionUsage: Map<String, com.hivebench.app.usage.AgentUsage> = emptyMap(),
+    /** Tokens each agent used today across all its conversations. */
+    val agentTodayUsage: Map<AgentKind, com.hivebench.app.usage.AgentUsage> = emptyMap(),
     val agentUpdatesChecking: Boolean = false,
     val agentUpdating: AgentKind? = null,
     val agentUpdateMessage: String? = null,
@@ -462,6 +466,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         when {
             !installed && setupSnapshot.status == RuntimeSetupStatus.ERROR -> onSetupSnapshot(setupSnapshot)
+            // An app update that moves to a newer Ubuntu release upgrades the runtime right away.
+            !installed && withContext(Dispatchers.IO) { installer.needsRuntimeUpgrade() } -> startRuntimeSetup()
             !installed -> _state.update { it.copy(startupStage = StartupStage.SETUP_REQUIRED, startupProgress = 0f) }
             // Agents sign in from the Agents tab (their own login or an API key),
             // so first run no longer stops at a provider picker.
@@ -593,6 +599,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 )
             }
             checkForAppUpdate()
+            checkAgentUpdates(automatic = true)
+            startUsagePolling()
         } else {
             showStartupError(result.exceptionOrNull() ?: IllegalStateException("Claude Code initialization failed"))
         }
@@ -805,8 +813,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun checkAgentUpdates() {
+    /** [automatic] checks run at startup at most every [AGENT_UPDATE_CHECK_INTERVAL_MS] and stay quiet. */
+    fun checkAgentUpdates(automatic: Boolean = false) {
         if (_state.value.agentUpdatesChecking || _state.value.agentUpdating != null) return
+        if (automatic && System.currentTimeMillis() - preferences.agentUpdatesCheckedAt < AGENT_UPDATE_CHECK_INTERVAL_MS) return
+        preferences.agentUpdatesCheckedAt = System.currentTimeMillis()
         _state.update { it.copy(agentUpdatesChecking = true, agentUpdateMessage = "Checking official agent releases…") }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { installer.checkAgentUpdates() } }
@@ -954,6 +965,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val base = _state.value.customRunnerCommand.ifBlank { "exec bash -l" }
                     val args = extraArgs.joinToString("") { " '" + it.replace("'", "'\\''") + "'" }
                     listOf("/usr/bin/bash", "-lc", base + args)
+                } else if (kind == AgentKind.CLAUDE_CODE) {
+                    spec.launch + installer.claudeUsageSettingsArgs() + extraArgs
                 } else spec.launch + extraArgs
             com.hivebench.app.runtime.AgentLaunchPurpose.LOGIN -> spec.login ?: spec.launch
             com.hivebench.app.runtime.AgentLaunchPurpose.API_KEY_LOGIN ->
@@ -1135,14 +1148,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?.map { File(it, "$sessionId.jsonl") }
             ?.firstOrNull { it.isFile }
 
+    private val usageTracker by lazy { com.hivebench.app.usage.AgentUsageTracker(installer::guestFile) }
+    private var usageJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Reads agents' own session logs: the active session every few seconds, today's
+     * totals less often. Only appended bytes are parsed, so polling stays cheap.
+     */
+    private fun startUsagePolling() {
+        if (usageJob?.isActive == true) return
+        usageJob = viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                val current = _state.value
+                val session = current.agentSessions.firstOrNull { it.id == current.activeAgentSessionId }
+                val project = current.activeProject
+                withContext(Dispatchers.IO) {
+                    val sessionUsage = if (session != null && project != null && session.kind in usageTracker.trackedAgents) {
+                        runCatching {
+                            usageTracker.sessionUsage(session.kind, session.resumeId, projectGuestRoot(project), session.createdAt)
+                        }.getOrNull()
+                    } else null
+                    val today = if (tick % 4 == 0) {
+                        usageTracker.trackedAgents.filter { current.installedAgentVersions.containsKey(it) }
+                            .mapNotNull { kind -> runCatching { usageTracker.todayUsage(kind) }.getOrNull()?.let { kind to it } }
+                            .toMap()
+                    } else null
+                    _state.update {
+                        it.copy(
+                            agentSessionUsage = if (session != null && sessionUsage != null) it.agentSessionUsage + (session.id to sessionUsage) else it.agentSessionUsage,
+                            agentTodayUsage = today ?: it.agentTodayUsage,
+)
+                    }
+                }
+                tick++
+                delay(USAGE_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
     fun updateAgent(kind: AgentKind) {
-        val update = _state.value.agentUpdates[kind] ?: return
         if (_state.value.agentUpdating != null || _state.value.agentInstalling != null) return
+        viewModelScope.launch { runAgentUpdate(kind) }
+    }
+
+    /** Updates every agent with a pending update, one at a time; skips agents that are running. */
+    fun updateAllAgents() {
+        if (_state.value.agentUpdating != null || _state.value.agentInstalling != null) return
+        viewModelScope.launch {
+            val kinds = _state.value.agentUpdates.keys.sortedBy { it.ordinal }
+            var updated = 0
+            val skipped = mutableListOf<String>()
+            kinds.forEach { kind -> if (runAgentUpdate(kind, quietWhenRunning = true)) updated++ else skipped += kind.title }
+            _state.update {
+                it.copy(
+                    agentUpdateMessage = buildString {
+                        append("Updated $updated of ${kinds.size} agents")
+                        if (skipped.isNotEmpty()) append(" · not updated: ${skipped.joinToString()}")
+                    },
+)
+            }
+        }
+    }
+
+    private suspend fun runAgentUpdate(kind: AgentKind, quietWhenRunning: Boolean = false): Boolean {
+        val update = _state.value.agentUpdates[kind] ?: return false
         // Swapping an agent's files under a live TUI breaks that session mid-task.
         val binary = com.hivebench.app.runtime.AgentCatalog.spec(kind).launch.firstOrNull()
         if (binary != null && com.hivebench.app.terminal.TerminalSessions.isBinaryRunning(binary)) {
-            _state.update { it.copy(toastMessage = "Stop the running ${kind.title} sessions before updating") }
-            return
+            if (!quietWhenRunning) _state.update { it.copy(toastMessage = "Stop the running ${kind.title} sessions before updating") }
+            return false
         }
         _state.update {
             it.copy(
@@ -1154,49 +1229,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agentUpdateBytesPerSecond = null,
 )
         }
-        viewModelScope.launch {
-            var sampleBytes = 0L
-            var sampleAt = SystemClock.elapsedRealtime()
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    installer.updateAgent(kind, update.latestVersion) { progress ->
-                        val now = SystemClock.elapsedRealtime()
-                        val bytes = progress.downloadedBytes
-                        val elapsed = now - sampleAt
-                        val speed = if (bytes != null && elapsed >= 500L) {
-                            ((bytes - sampleBytes).coerceAtLeast(0L) * 1_000L / elapsed.coerceAtLeast(1L)).also {
-                                sampleBytes = bytes
-                                sampleAt = now
-                            }
-                        } else _state.value.agentUpdateBytesPerSecond
-                        _state.update {
-                            it.copy(
-                                agentUpdateMessage = progress.message,
-                                agentUpdateProgress = progress.fraction.coerceIn(0f, 1f),
-                                agentUpdateDownloadedBytes = bytes ?: it.agentUpdateDownloadedBytes,
-                                agentUpdateTotalBytes = progress.totalBytes ?: it.agentUpdateTotalBytes,
-                                agentUpdateBytesPerSecond = speed,
-)
+        var sampleBytes = 0L
+        var sampleAt = SystemClock.elapsedRealtime()
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                installer.updateAgent(kind, update.latestVersion) { progress ->
+                    val now = SystemClock.elapsedRealtime()
+                    val bytes = progress.downloadedBytes
+                    val elapsed = now - sampleAt
+                    val speed = if (bytes != null && elapsed >= 500L) {
+                        ((bytes - sampleBytes).coerceAtLeast(0L) * 1_000L / elapsed.coerceAtLeast(1L)).also {
+                            sampleBytes = bytes
+                            sampleAt = now
                         }
+                    } else _state.value.agentUpdateBytesPerSecond
+                    _state.update {
+                        it.copy(
+                            agentUpdateMessage = progress.message,
+                            agentUpdateProgress = progress.fraction.coerceIn(0f, 1f),
+                            agentUpdateDownloadedBytes = bytes ?: it.agentUpdateDownloadedBytes,
+                            agentUpdateTotalBytes = progress.totalBytes ?: it.agentUpdateTotalBytes,
+                            agentUpdateBytesPerSecond = speed,
+)
                     }
                 }
             }
-            _state.update { current ->
-                current.copy(
-                    installedAgentVersions = installer.installedAgentVersions(),
-                    agentUpdates = if (result.isSuccess) current.agentUpdates - kind else current.agentUpdates,
-                    agentUpdating = null,
-                    agentUpdateMessage = result.fold(
-                        onSuccess = { "${kind.title} updated to ${update.latestVersion}" },
-                        onFailure = { error -> error.message?.take(220) ?: "Could not update ${kind.title}" },
-),
-                    agentUpdateProgress = if (result.isSuccess) 1f else 0f,
-                    agentUpdateDownloadedBytes = null,
-                    agentUpdateTotalBytes = null,
-                    agentUpdateBytesPerSecond = null,
-)
-            }
         }
+        val versions = withContext(Dispatchers.IO) { installer.installedAgentVersions() }
+        _state.update { current ->
+            current.copy(
+                installedAgentVersions = versions,
+                agentUpdates = if (result.isSuccess) current.agentUpdates - kind else current.agentUpdates,
+                agentUpdating = null,
+                agentUpdateMessage = result.fold(
+                    onSuccess = { installed -> "${kind.title} updated to $installed" },
+                    onFailure = { error -> error.message?.take(220) ?: "Could not update ${kind.title}" },
+),
+                agentUpdateProgress = if (result.isSuccess) 1f else 0f,
+                agentUpdateDownloadedBytes = null,
+                agentUpdateTotalBytes = null,
+                agentUpdateBytesPerSecond = null,
+)
+        }
+        return result.isSuccess
     }
 
     /** Called from the first-launch tool picker; persists the choice for setup and Settings. */
@@ -2813,6 +2888,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val MINIMUM_INITIALIZATION_SCREEN_MS = 3_000L
+        private const val AGENT_UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1_000L
+        private const val USAGE_POLL_INTERVAL_MS = 4_000L
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
         private const val MAX_PROJECT_TERMINAL_HISTORY = 100
         private const val MAX_PROJECT_TERMINAL_OUTPUT = 200_000

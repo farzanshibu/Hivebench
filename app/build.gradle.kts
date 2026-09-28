@@ -36,7 +36,7 @@ val hasUploadSigning = listOf(
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
 val runtimeReleaseBaseUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+    "https://github.com/farzanshibu/hivebench/releases/download/runtime-2026.09.6"
 // In-app update feed: CI attaches hivebench-update.json to every tagged GitHub release.
 val appUpdateManifestUrl = providers.gradleProperty("appUpdateManifestUrl").orNull
     ?: "https://github.com/farzanshibu/hivebench/releases/latest/download/hivebench-update.json"
@@ -50,9 +50,8 @@ val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets"
 
 val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAssets") {
     from(
-        runtimeBundleDir.file("pocketdev-core-arm64-2026.09.5.tar.zst"),
+        runtimeBundleDir.file("pocketdev-core-arm64-2026.09.6.tar.zst"),
         runtimeBundleDir.file("pocketdev-claude-arm64-2026.09.1.tar.zst"),
-        runtimeBundleDir.file("pocketdev-python-arm64-2026.09.2.tar.zst"),
         runtimeBundleDir.file("pocketdev-android-arm64-2026.09.1.tar.zst"),
         runtimeBundleDir.file("pocketdev-dsh-arm64-2026.09.1.tar.zst"),
     )

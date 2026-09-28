@@ -9,9 +9,10 @@ partitions, Magisk files, device identifiers, or user data are included.
 
 ## Bundle layout
 
-- `core`: Ubuntu, Node, npm, Git, and shared runtime support. It contains no
-  coding agent.
-- `python`: Python, pip, venv, and build tools. Downloaded only when selected.
+- `core`: Ubuntu 24.04, Node, npm, Git, and shared runtime support. It contains
+  no coding agent. Build it with `scripts/runtime-bundles/build-core-docker.sh`
+  on any ARM64 Docker host (Apple silicon or ARM64 Linux). Python, C/C++, PHP
+  and Docker stacks install from Ubuntu's apt archive when selected.
 - `android`: a portable JDK 17, Android SDK, ARM64 build tools, Gradle, the
   offline Maven repository, and PocketDev's global ARM64 AAPT2 configuration.
 - `cpp`: GCC, G++, make, CMake, and GDB.

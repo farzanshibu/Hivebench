@@ -104,6 +104,12 @@ class RuntimeInstaller(private val context: Context) {
         macosMetadataRepairMarker.writeText("1")
     }
 
+    /** True when an older Ubuntu runtime is present and setup will upgrade it in place. */
+    fun needsRuntimeUpgrade(): Boolean {
+        val current = File(rootfs, "usr/bin/bash").exists() && rootfsMarker.readTextOrNull() == ROOTFS_VERSION
+        return !current && (File(rootfs, "usr/bin/bash").exists() || File(runtimeDir, "ubuntu.previous/usr/bin/bash").exists())
+    }
+
     /** Returns the already verified runtime without performing network or update checks. */
     fun installedRuntime(): InstalledRuntime {
         check(isInstalled()) { "Core runtime setup is incomplete. Reopen Hivebench to repair it." }
@@ -150,28 +156,57 @@ class RuntimeInstaller(private val context: Context) {
         val proot = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
         require(proot.canExecute()) { "The embedded PRoot launcher is unavailable" }
 
+        var migratedStacks = emptySet<DevStack>()
         if (!File(rootfs, "usr/bin/bash").exists() || rootfsMarker.readTextOrNull() != ROOTFS_VERSION) {
-            onProgress(RuntimeInstallProgress("Preparing the private development runtime", 0.03f))
-            val archive = obtainRuntimeBundle(
-                CORE_BUNDLE,
-                preferEmbedded = BuildConfig.OFFLINE_RUNTIME_BUNDLES,
-                from = 0.03f,
-                to = 0.25f,
-                onProgress,
-            )
-            onProgress(RuntimeInstallProgress("Verifying and unpacking the Core runtime", 0.28f))
+            // A runtime from an older Ubuntu release stays untouched until the new Core is
+            // unpacked, then moves aside as ubuntu.previous while its user state is carried
+            // over. The journal marker lets an interrupted upgrade resume instead of
+            // discarding a staging directory that already holds carried-over files.
+            val previous = File(runtimeDir, "ubuntu.previous")
             val staging = File(runtimeDir, "ubuntu.installing")
-            staging.deleteRecursively()
-            staging.mkdirs()
-            extractZstdTar(archive, staging)
-            stripMacosMetadataArtifacts(staging)
-            require(File(staging, "usr/bin/bash").isFile) { "Core bundle is missing Bash" }
+            val journal = File(staging, MIGRATION_JOURNAL)
+            val oldRuntimePresent = File(rootfs, "usr/bin/bash").exists() || File(previous, "usr/bin/bash").exists()
+            onProgress(
+                RuntimeInstallProgress(
+                    if (oldRuntimePresent) "Upgrading the private runtime to Ubuntu 24.04" else "Preparing the private development runtime",
+                    0.03f,
+                ),
+            )
+            var archive: File? = null
+            if (!(journal.isFile && File(staging, "usr/bin/bash").isFile)) {
+                archive = obtainRuntimeBundle(
+                    CORE_BUNDLE,
+                    preferEmbedded = BuildConfig.OFFLINE_RUNTIME_BUNDLES,
+                    from = 0.03f,
+                    to = 0.25f,
+                    onProgress,
+                )
+                onProgress(RuntimeInstallProgress("Verifying and unpacking the Core runtime", 0.28f))
+                staging.deleteRecursively()
+                staging.mkdirs()
+                extractZstdTar(archive, staging)
+                stripMacosMetadataArtifacts(staging)
+                require(File(staging, "usr/bin/bash").isFile) { "Core bundle is missing Bash" }
+            }
+            if (File(rootfs, "usr/bin/bash").exists()) {
+                previous.deleteRecursively()
+                check(rootfs.renameTo(previous)) { "Could not stage the previous Linux environment" }
+            }
+            if (File(previous, "usr/bin/bash").exists()) {
+                onProgress(RuntimeInstallProgress("Carrying over sign-ins, agents and settings", 0.5f, indeterminate = true))
+                journal.writeText(ROOTFS_VERSION)
+                migratedStacks = carryOverRuntime(previous, staging)
+            }
             rootfs.deleteRecursively()
             check(staging.renameTo(rootfs)) { "Could not activate the Linux environment" }
+            File(rootfs, MIGRATION_JOURNAL).delete()
+            previous.deleteRecursively()
             check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
             writeResolver()
-            if (archive.parentFile == downloads) archive.delete()
+            if (archive?.parentFile == downloads) archive.delete()
         }
+        // An upgrade interrupted after activation leaves only the emptied old runtime behind.
+        File(runtimeDir, "ubuntu.previous").deleteRecursively()
 
         check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
 
@@ -201,7 +236,7 @@ class RuntimeInstaller(private val context: Context) {
             coreToolsMarker.writeText(CORE_TOOLS_VERSION)
         }
 
-        val missingStacks = selectedStacks.filterNot(::isStackInstalled)
+        val missingStacks = (selectedStacks + migratedStacks).filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
             val slice = 0.26f / maxOf(1, missingStacks.size)
             val from = 0.72f + index * slice
@@ -280,7 +315,7 @@ class RuntimeInstaller(private val context: Context) {
         runGuestCommand(
             proot = runtime.proot,
             command = "npm install -g --prefix /usr/local --no-audit --no-fund --omit=dev ${pkg.name}@$version" +
-                "; rm -rf /root/.npm/_cacache; test -f /usr/local/lib/node_modules/${pkg.name}/package.json",
+                "; status=\$?; rm -rf /root/.npm/_cacache; exit \$status",
             displayCommand = "npm install -g ${pkg.name}@$version",
             fraction = 0.5f,
             timeoutMs = 20 * 60 * 1_000L,
@@ -288,6 +323,10 @@ class RuntimeInstaller(private val context: Context) {
             failureMessage = "${agent.title} could not be installed",
         )
         check(npmPackageJson(pkg).isFile) { "${agent.title} installation is incomplete" }
+        if (version != "latest") {
+            val installed = runCatching { JSONObject(npmPackageJson(pkg).readText()).getString("version") }.getOrNull()
+            check(installed == version) { "${agent.title} is still at ${installed ?: "an unknown version"} after updating to $version" }
+        }
     }
 
     private suspend fun installGitHubAgent(
@@ -332,16 +371,14 @@ class RuntimeInstaller(private val context: Context) {
         val destination = File(rootfs, "usr/local/bin/${pkg.bin}")
         destination.parentFile?.mkdirs()
         removeLegacyAgentStub(pkg.bin)
+        val staged = File(destination.parentFile, ".${pkg.bin}-$releaseTag.installing")
         var found = false
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(downloaded.inputStream()))).use { archive ->
             var entry = archive.nextEntry
             while (entry != null) {
                 val name = entry.name.removePrefix("./")
                 if (entry.isFile && (name == pkg.member || name.endsWith("/${pkg.member}"))) {
-                    val staged = File(destination.parentFile, ".${pkg.bin}-$releaseTag.installing")
                     FileOutputStream(staged).use { archive.copyTo(it) }
-                    Os.chmod(staged.absolutePath, 0b111101101)
-                    Os.rename(staged.absolutePath, destination.absolutePath)
                     found = true
                     break
                 }
@@ -349,8 +386,8 @@ class RuntimeInstaller(private val context: Context) {
             }
         }
         downloaded.delete()
-        check(found) { "${agent.title} archive did not contain ${pkg.bin}" }
-        verifyGuest(runtime.proot, "/usr/local/bin/${pkg.bin} --version", "${agent.title} verification failed")
+        check(found) { "${agent.title} archive did not contain ${pkg.member}" }
+        swapVerifiedBinary(runtime.proot, staged, destination, "/usr/local/bin/${pkg.bin} --version", "${agent.title} verification failed")
         githubAgentMarker(pkg).writeText(releaseTag.removePrefix("v"))
     }
 
@@ -520,11 +557,12 @@ class RuntimeInstaller(private val context: Context) {
         }
     }
 
+    /** Updates one agent and returns the version now installed. */
     suspend fun updateAgent(
         agent: com.hivebench.app.model.AgentKind,
         expectedVersion: String,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
+    ): String {
         val runtime = installedRuntime()
         when (agent) {
             com.hivebench.app.model.AgentKind.CLAUDE_CODE -> updateClaude(runtime, expectedVersion, onProgress)
@@ -536,7 +574,35 @@ class RuntimeInstaller(private val context: Context) {
                 else -> Unit
             }
         }
-        onProgress(RuntimeInstallProgress("${agent.title} $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+        val installed = installedAgentVersions()[agent] ?: expectedVersion
+        onProgress(RuntimeInstallProgress("${agent.title} $installed is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+        return installed
+    }
+
+    /**
+     * Moves a downloaded executable over [destination] and runs [verifyCommand]; if the
+     * new build does not start, the previous executable is restored before failing.
+     */
+    private suspend fun swapVerifiedBinary(
+        proot: File,
+        staged: File,
+        destination: File,
+        verifyCommand: String,
+        failureMessage: String,
+    ) {
+        Os.chmod(staged.absolutePath, 0b111101101)
+        val backup = File(destination.parentFile, ".${destination.name}.previous")
+        backup.delete()
+        val hadPrevious = destination.isFile
+        if (hadPrevious) Os.rename(destination.absolutePath, backup.absolutePath)
+        Os.rename(staged.absolutePath, destination.absolutePath)
+        try {
+            verifyGuest(proot, verifyCommand, failureMessage)
+        } catch (error: Throwable) {
+            if (hadPrevious) Os.rename(backup.absolutePath, destination.absolutePath) else destination.delete()
+            throw error
+        }
+        backup.delete()
     }
 
     private suspend fun updateClaude(
@@ -544,8 +610,8 @@ class RuntimeInstaller(private val context: Context) {
         expectedVersion: String,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        val latest = JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version")
-        check(latest == expectedVersion) { "A newer Claude Code release appeared. Check again before updating." }
+        val latest = expectedVersion
+        check(latest.matches(CLAUDE_VERSION_PATTERN)) { "Invalid Claude Code version" }
         val base = "https://downloads.claude.ai/claude-code-releases/$latest"
         val manifest = JSONObject(fetchText("$base/manifest.json"))
         val checksum = manifest.getJSONObject("platforms").getJSONObject("linux-arm64").getString("checksum")
@@ -558,10 +624,8 @@ class RuntimeInstaller(private val context: Context) {
         claude.parentFile?.mkdirs()
         val staged = File(claude.parentFile, ".claude-$latest.installing")
         downloaded.copyTo(staged, overwrite = true)
-        Os.chmod(staged.absolutePath, 0b111101101)
-        Os.rename(staged.absolutePath, claude.absolutePath)
         downloaded.delete()
-        verifyGuest(runtime.proot, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
+        swapVerifiedBinary(runtime.proot, staged, claude, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
         claudeMarker.writeText(latest)
     }
 
@@ -571,23 +635,21 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         val manifest = fetchAgyManifest()
+        // Google publishes only the newest build, which may be newer than the one offered.
         val latest = manifest.getString("version")
-        check(latest == expectedVersion) { "A newer Antigravity release appeared. Check again before updating." }
         val downloaded = File(downloads, "antigravity-$latest-linux-arm64.tar.gz")
         downloadVerified(manifest.getString("url"), downloaded, manifest.getString("sha512"), algorithm = "SHA-512") { bytes, total ->
             val ratio = if (total > 0L) bytes.toFloat() / total else 0f
             onProgress(RuntimeInstallProgress("Downloading Antigravity CLI $latest", ratio * 0.9f, bytes, total.takeIf { it > 0L }, event = RuntimeInstallEvent.DOWNLOAD))
         }
         val destination = File(rootfs, AGY_GUEST_PATH.removePrefix("/"))
+        val staged = File(destination.parentFile, ".agy-$latest.installing")
         var found = false
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(downloaded.inputStream()))).use { archive ->
             var entry = archive.nextEntry
             while (entry != null) {
                 if (entry.isFile && entry.name.removePrefix("./") == "antigravity") {
-                    val staged = File(destination.parentFile, ".agy-$latest.installing")
                     FileOutputStream(staged).use { archive.copyTo(it) }
-                    Os.chmod(staged.absolutePath, 0b111101101)
-                    Os.rename(staged.absolutePath, destination.absolutePath)
                     found = true
                     break
                 }
@@ -596,7 +658,7 @@ class RuntimeInstaller(private val context: Context) {
         }
         downloaded.delete()
         check(found) { "Antigravity update archive is incomplete" }
-        verifyGuest(runtime.proot, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
+        swapVerifiedBinary(runtime.proot, staged, destination, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
         agyMarker.writeText(latest)
     }
 
@@ -605,8 +667,7 @@ class RuntimeInstaller(private val context: Context) {
         expectedVersion: String,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        val latest = JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version")
-        check(latest == expectedVersion) { "A newer DeepSeek Harness release appeared. Check again before updating." }
+        val latest = expectedVersion
         val quotedVersion = latest.replace(Regex("[^0-9A-Za-z.+-]"), "")
         check(quotedVersion == latest) { "Invalid DeepSeek Harness version" }
         runGuestCommand(
@@ -634,15 +695,25 @@ class RuntimeInstaller(private val context: Context) {
         fetchText("https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json"),
     )
 
+    /** Semver-style comparison: a release is newer than its own pre-releases (0.1.2 > 0.1.2-rc.1). */
     private fun isVersionNewer(candidate: String, current: String): Boolean {
-        fun parts(value: String) = Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
-        val left = parts(candidate)
-        val right = parts(current)
-        repeat(maxOf(left.size, right.size)) { index ->
-            val comparison = (left.getOrElse(index) { 0 }).compareTo(right.getOrElse(index) { 0 })
-            if (comparison != 0) return comparison > 0
+        fun numbers(value: String) = Regex("\\d+").findAll(value).map { it.value.toLongOrNull() ?: 0L }.toList()
+        fun compare(left: List<Long>, right: List<Long>): Int {
+            repeat(maxOf(left.size, right.size)) { index ->
+                val comparison = left.getOrElse(index) { 0L }.compareTo(right.getOrElse(index) { 0L })
+                if (comparison != 0) return comparison
+            }
+            return 0
         }
-        return candidate != current && !candidate.contains("alpha", true) && !candidate.contains("rc", true)
+        val (candidateCore, candidatePre) = candidate.removePrefix("v").split('-', '+', limit = 2).let { it[0] to it.getOrNull(1) }
+        val (currentCore, currentPre) = current.removePrefix("v").split('-', '+', limit = 2).let { it[0] to it.getOrNull(1) }
+        val core = compare(numbers(candidateCore), numbers(currentCore))
+        if (core != 0) return core > 0
+        return when {
+            candidatePre == null -> currentPre != null
+            currentPre == null -> false
+            else -> compare(numbers(candidatePre), numbers(currentPre)) > 0
+        }
     }
 
     /**
@@ -659,6 +730,47 @@ class RuntimeInstaller(private val context: Context) {
             bundledClaudeMarker.readTextOrNull(),
         ).mapNotNull { it?.trim() }.firstOrNull { it.matches(CLAUDE_VERSION_PATTERN) } ?: return
         claudeMarker.writeText(legacyVersion)
+    }
+
+    /**
+     * Moves user state and self-contained agents from an older Ubuntu runtime into
+     * a freshly unpacked one. /root keeps sign-ins, agent history and the Android SDK;
+     * /usr/local and /opt keep agents, the JDK and Gradle, which do not depend on the
+     * Ubuntu release. apt-installed stacks do not survive the new package set, so
+     * they are marked missing and returned for reinstallation.
+     */
+    private fun carryOverRuntime(previous: File, next: File): Set<DevStack> {
+        fun move(relative: String) {
+            val source = File(previous, relative)
+            if (!source.exists() && !java.nio.file.Files.isSymbolicLink(source.toPath())) return
+            val target = File(next, relative)
+            if (target.isDirectory && !java.nio.file.Files.isSymbolicLink(target.toPath())) target.deleteRecursively() else target.delete()
+            target.parentFile?.mkdirs()
+            check(source.renameTo(target)) { "Could not carry over /$relative" }
+        }
+        fun moveMissingChildren(relative: String) {
+            File(previous, relative).list().orEmpty().forEach { name ->
+                val child = "$relative/$name"
+                val target = File(next, child)
+                if (!target.exists() && !java.nio.file.Files.isSymbolicLink(target.toPath())) move(child)
+            }
+        }
+        val stacks = JSONObject(File(previous, ".pocket-dev-stacks.json").readTextOrNull() ?: "{}")
+        move("root")
+        moveMissingChildren("usr/local/bin")
+        moveMissingChildren("usr/local/lib")
+        moveMissingChildren("opt")
+        previous.list().orEmpty()
+            .filter { it.startsWith(".pocket-") && it !in RELEASE_BOUND_MARKERS }
+            .forEach(::move)
+
+        val reinstall = DevStack.entries.filter { it in APT_STACKS && stacks.optBoolean(it.name) }.toSet()
+        val state = JSONObject()
+        DevStack.entries.forEach { stack ->
+            state.put(stack.name, stack == DevStack.WEB || (stack !in APT_STACKS && stacks.optBoolean(stack.name)))
+        }
+        File(next, ".pocket-dev-stacks.json").writeText(state.toString())
+        return reinstall
     }
 
     private fun isSupportedCoreToolsVersion(): Boolean = coreToolsMarker.readTextOrNull() in setOf(
@@ -813,7 +925,10 @@ class RuntimeInstaller(private val context: Context) {
         onProgress(RuntimeInstallProgress("Removing ${stack.label} tools", 0.1f, indeterminate = true))
         when (stack) {
             DevStack.WEB -> Unit
-            DevStack.PYTHON -> removePythonStack()
+            DevStack.PYTHON -> {
+                aptRemove(runtime.proot, listOf("python3-pip", "python3-venv", "python3-dev"), 0.45f, onProgress)
+                removePath(File(rootfs, "root/.cache/pip"))
+            }
             DevStack.ANDROID -> removeAndroidStack()
             DevStack.CPP -> aptRemove(
                 runtime.proot,
@@ -846,24 +961,6 @@ class RuntimeInstaller(private val context: Context) {
 
         writeDevStackState(readDevStackState().apply { put(stack.name, false) })
         onProgress(RuntimeInstallProgress("${stack.label} removed", 1f))
-    }
-
-    private fun removePythonStack() {
-        listOf(
-            ".pocket-python-tools-version",
-            "usr/bin/python3",
-            "usr/bin/python3.8",
-            "usr/bin/pip",
-            "usr/bin/pip3",
-            "usr/lib/aarch64-linux-gnu/libpython3.8.so.1",
-            "usr/lib/aarch64-linux-gnu/libpython3.8.so.1.0",
-            "usr/lib/python3",
-            "usr/lib/python3.8",
-            "usr/local/lib/python3.8",
-            "usr/share/python3",
-            "usr/share/python-wheels",
-            "root/.cache/pip",
-        ).forEach { removePath(File(rootfs, it)) }
     }
 
     private fun removeAndroidStack() {
@@ -916,25 +1013,30 @@ class RuntimeInstaller(private val context: Context) {
         to: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        var verified = true
         when (stack) {
             DevStack.WEB -> {
                 onProgress(RuntimeInstallProgress("Checking Node.js and npm", from))
                 verifyGuest(proot, "node --version && npm --version", "Node.js tools could not be verified")
             }
             DevStack.PYTHON -> {
-                installRuntimeOverlay(PYTHON_BUNDLE, "Installing Python, pip, and venv", from, to, onProgress)
-                runCatching {
-                    verifyGuest(proot, "python3 --version && pip3 --version", "Python tools could not be verified")
-                }.onFailure { error ->
-                    verified = false
-                    onProgress(
-                        RuntimeInstallProgress(
-                            "Python verify failed (will retry on next launch): ${error.message?.take(120)}",
-                            to,
-                        ),
-                    )
-                }
+                aptInstall(
+                    proot,
+                    listOf("python3", "python3-pip", "python3-venv", "python3-dev"),
+                    "Installing Python, pip, and venv",
+                    from,
+                    onProgress,
+                )
+                // Keep `pip install` working globally, as it did before Ubuntu adopted PEP 668.
+                runGuestCommand(
+                    proot = proot,
+                    command = "rm -f /usr/lib/python3*/EXTERNALLY-MANAGED",
+                    displayCommand = "rm -f /usr/lib/python3*/EXTERNALLY-MANAGED",
+                    fraction = to,
+                    timeoutMs = 60_000L,
+                    onProgress = onProgress,
+                    failureMessage = "Could not enable pip",
+                )
+                verifyGuest(proot, "python3 --version && pip3 --version", "Python tools could not be verified")
             }
             DevStack.ANDROID -> {
                 installAndroidToolchain(proot, from, to, onProgress)
@@ -977,7 +1079,6 @@ class RuntimeInstaller(private val context: Context) {
                 verifyGuest(proot, "docker --version && docker-compose --version", "Docker tools could not be verified")
             }
         }
-        if (!verified) return
         writeDevStackState(readDevStackState().apply { put(stack.name, true) })
         onProgress(RuntimeInstallProgress("${stack.label} installed", to))
     }
@@ -1592,7 +1693,7 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     /**
-     * Ubuntu 20.04 uses a merged-/usr layout. A partially extracted or upgraded
+     * Ubuntu 24.04 uses a merged-/usr layout. A partially extracted or upgraded
      * runtime can lose these top-level links while all readiness markers remain,
      * making every ELF executable misleadingly fail with ENOENT. Restore only
      * the known Ubuntu compatibility links and never replace real directories.
@@ -1785,6 +1886,28 @@ class RuntimeInstaller(private val context: Context) {
      * into Claude Code's own settings files. Strip exactly those entries so the
      * TUI's permission modes apply, keeping everything the user configured.
      */
+    /**
+     * `--settings` arguments that give a Claude Code session a status line which saves
+     * Claude's status JSON (plan rate limits, context) for the usage display. Returns
+     * nothing when the user configured their own status line, which always wins.
+     */
+    fun claudeUsageSettingsArgs(): List<String> {
+        val userSettings = listOf("root/.claude/settings.json", "etc/claude/settings.json")
+            .mapNotNull { File(rootfs, it).readTextOrNull() }
+        if (userSettings.any { text -> runCatching { JSONObject(text).has("statusLine") }.getOrDefault(false) }) return emptyList()
+        val script = File(rootfs, CLAUDE_STATUSLINE_SCRIPT.removePrefix("/"))
+        if (script.readTextOrNull() != CLAUDE_STATUSLINE_SOURCE.trim()) {
+            script.parentFile?.mkdirs()
+            script.writeText(CLAUDE_STATUSLINE_SOURCE)
+            Os.chmod(script.absolutePath, 0b111101101)
+        }
+        val settings = JSONObject().put(
+            "statusLine",
+            JSONObject().put("type", "command").put("command", CLAUDE_STATUSLINE_SCRIPT).put("padding", 0),
+        )
+        return listOf("--settings", settings.toString())
+    }
+
     fun removePocketClaudeSettings() {
         File(rootfs, "root/.claude/pocket-settings.json").delete()
         val pocketAllow = claudeWorkspaceToolRules().let { rules -> (0 until rules.length()).map { rules.getString(it) }.toSet() }
@@ -2068,14 +2191,24 @@ class RuntimeInstaller(private val context: Context) {
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
         private const val LEGACY_README = "# Pocket Dev project\n\nThis project is managed locally on Android.\n"
         private const val LEGACY_INDEX = "<!doctype html><title>Pocket Dev</title><h1>Hello from Android</h1>\n"
-        private const val ROOTFS_VERSION = "ubuntu-20.04.5-arm64"
-        private const val ROOTFS_FILE = "ubuntu-base-20.04.5-base-arm64.tar.gz"
-        private const val ROOTFS_URL = "https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/$ROOTFS_FILE"
-        private const val ROOTFS_SHA256 = "f9b999afb4c4b10193087ea8c11be36d688f19e609b05179b571f29357954b52"
+        private const val ROOTFS_VERSION = "ubuntu-24.04.5-arm64"
+        private const val MIGRATION_JOURNAL = ".pocket-migration-journal"
+        /** Markers describing the Ubuntu release itself; they never move to a new runtime. */
+        private val RELEASE_BOUND_MARKERS = setOf(
+            ".pocket-rootfs-version",
+            ".pocket-core-tools-version",
+            ".pocket-runtime-ready",
+            ".pocket-system-upgrade-version",
+            ".pocket-language-tools-version",
+            ".pocket-python-tools-version",
+            ".pocket-dev-stacks.json",
+        )
+        /** Stacks installed through apt, which must be reinstalled on a new Ubuntu release. */
+        private val APT_STACKS = setOf(DevStack.PYTHON, DevStack.CPP, DevStack.PHP, DevStack.DOCKER)
         private const val NODE_VERSION = "v24.19.0"
         private const val LANGUAGE_TOOLS_VERSION = "node-v24.19.0-python3-v1"
-        private const val CORE_TOOLS_VERSION = "core-bundle-2026.09.5"
-        private const val LEGACY_CORE_TOOLS_VERSION = "core-bundle-2026.09.4"
+        private const val CORE_TOOLS_VERSION = "core-bundle-2026.09.6"
+        private const val LEGACY_CORE_TOOLS_VERSION = "core-bundle-2026.09.5"
         private const val SYSTEM_UPGRADE_VERSION = "ubuntu-maintenance-v1"
         private const val ANDROID_TOOLS_VERSION = "sdk36-build-tools35-gradle8.14.3-maven-2026.09"
         private const val ANDROID_ASSET_BASE = "https://appdevforall.org/dev-assets/debug"
@@ -2094,24 +2227,29 @@ class RuntimeInstaller(private val context: Context) {
         private const val DSH_ANDROID_COMPATIBILITY_VERSION = "copyfile-excl-v1"
         private val CORE_BUNDLE = RuntimeBundle(
             label = "Core",
-            fileName = "pocketdev-core-arm64-2026.09.5.tar.zst",
-            sha256 = "df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012",
-            compressedBytes = 72_185_773L,
+            fileName = "pocketdev-core-arm64-2026.09.6.tar.zst",
+            sha256 = "3788654ca41ab7ebf9596a3c1ec9770c3790f9240cb8a90eb94ea93c414c4eb4",
+            compressedBytes = 73_653_111L,
         )
         private const val CLAUDE_BUNDLED_VERSION = "2.1.263"
         const val CLAUDE_GUEST_PATH = "/usr/local/bin/claude"
         private const val POCKET_PERMISSION_HOOK = "/opt/pocket/permission-hook.sh"
+        private const val CLAUDE_STATUSLINE_SCRIPT = "/opt/pocket/claude-statusline.sh"
+        /** Guest path where the status line leaves Claude's latest status JSON. */
+        const val CLAUDE_STATUS_FILE = "/root/.cache/hivebench/claude-status.json"
+        private val CLAUDE_STATUSLINE_SOURCE = """
+            #!/bin/sh
+            # Written by Hivebench: keeps Claude Code's status JSON for the app's usage display.
+            dir=/root/.cache/hivebench
+            mkdir -p "${'$'}dir"
+            cat > "${'$'}dir/claude-status.json.tmp" && mv "${'$'}dir/claude-status.json.tmp" "${'$'}dir/claude-status.json"
+            sed -n 's/.*"display_name" *: *"\([^"]*\)".*/\1/p' "${'$'}dir/claude-status.json" | head -n 1
+        """.trimIndent() + "\n"
         private val CLAUDE_BUNDLE = RuntimeBundle(
             label = "Claude Code",
             fileName = "pocketdev-claude-arm64-2026.09.1.tar.zst",
             sha256 = "0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724",
             compressedBytes = 75_289_800L,
-        )
-        private val PYTHON_BUNDLE = RuntimeBundle(
-            label = "Python",
-            fileName = "pocketdev-python-arm64-2026.09.2.tar.zst",
-            sha256 = "6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85",
-            compressedBytes = 55_419_626L,
         )
         private val ANDROID_BUNDLE = RuntimeBundle(
             label = "Android",

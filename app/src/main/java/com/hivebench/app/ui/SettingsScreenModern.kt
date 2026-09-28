@@ -287,13 +287,13 @@ fun SettingsScreen(
                 SettingsAccordion(
                     title = "Linux runtime",
                     accent = com.hivebench.app.ui.theme.NeoMint,
-                    subtitle = "Ubuntu 20.04 PRoot · ARM64",
+                    subtitle = "Ubuntu 24.04 PRoot · ARM64",
                     icon = Icons.Default.Terminal,
                     expanded = expanded == SettingsSection.RUNTIME,
                     onClick = { toggle(SettingsSection.RUNTIME) },
                 ) {
                     RuntimeInfoRow("Architecture", "ARM64 (aarch64)")
-                    RuntimeInfoRow("Environment", "Ubuntu 20.04 PRoot")
+                    RuntimeInfoRow("Environment", "Ubuntu 24.04 PRoot")
                     RuntimeInfoRow(
                         "Active agent",
                         state.agentKind.title + if (state.installedAgentVersions.containsKey(state.agentKind)) "" else " · Not installed",

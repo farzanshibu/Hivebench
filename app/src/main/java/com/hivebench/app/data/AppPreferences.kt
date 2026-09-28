@@ -51,6 +51,10 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("agent_antigravity_effort", "high") ?: "high"
         set(value) { preferences.edit().putString("agent_antigravity_effort", value).apply() }
 
+    var agentUpdatesCheckedAt: Long
+        get() = preferences.getLong("agent_updates_checked_at", 0L)
+        set(value) { preferences.edit().putLong("agent_updates_checked_at", value).apply() }
+
     var antigravitySignedIn: Boolean
         get() = preferences.getBoolean("agent_antigravity_signed_in", false)
         set(value) { preferences.edit().putBoolean("agent_antigravity_signed_in", value).apply() }

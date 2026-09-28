@@ -121,29 +121,39 @@ fun AgentsHubScreen(state: AppUiState, viewModel: MainViewModel, modifier: Modif
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Coding agents", fontWeight = FontWeight.Black, fontSize = 20.sp)
-                    Text(
-                        state.agentUpdateMessage ?: "Each agent runs its own terminal app with its native commands.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                NeoButton(
-                    onClick = viewModel::checkAgentUpdates,
-                    enabled = !state.agentUpdatesChecking,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    if (state.agentUpdatesChecking) {
-                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Coding agents", fontWeight = FontWeight.Black, fontSize = 20.sp)
+                        Text(
+                            state.agentUpdateMessage ?: "Each agent runs its own terminal app with its native commands.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Text("Updates", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    NeoButton(
+                        onClick = viewModel::checkAgentUpdates,
+                        enabled = !state.agentUpdatesChecking,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        if (state.agentUpdatesChecking) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text("Updates", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+                if (state.agentUpdates.size > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    SmallButton(
+                        "Update all (${state.agentUpdates.size})",
+                        primary = true,
+                        enabled = state.agentUpdating == null && state.agentInstalling == null,
+                    ) { viewModel.updateAllAgents() }
                 }
             }
         }
@@ -230,6 +240,16 @@ private fun AgentCard(
                     Text(
                         listOfNotNull(version?.takeIf { it != "custom" }?.let { "v$it" }, authText).joinToString(" · "),
                         fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                state.agentTodayUsage[agent]?.let { today ->
+                    Text(
+                        if (today.totalTokens == 0L) "Today: no tokens used"
+                        else "Today: ${formatTokens(today.totalTokens)} tokens" +
+                            today.rateLimits.joinToString("") { " · ${it.label} ${it.usedPercent.toInt()}%" },
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -641,6 +661,10 @@ fun AgentSessionTab(state: AppUiState, viewModel: MainViewModel, onOpenAgents: (
             if (entry != null) SmallButton("Close", primary = false) { requestClose(entry.id) }
         }
 
+        if (installed && agent in TRACKED_USAGE_AGENTS) {
+            UsageStrip(entry?.let { state.agentSessionUsage[it.id] }, agent)
+        }
+
         val auth = state.agentAuth[agent]
         if (installed && auth != null && auth.account == false && auth.apiKeyEnvs.isEmpty()) {
             Text(
@@ -715,6 +739,53 @@ fun AgentSessionTab(state: AppUiState, viewModel: MainViewModel, onOpenAgents: (
                 onOpenAgents()
             },
         )
+    }
+}
+
+private val TRACKED_USAGE_AGENTS = setOf(AgentKind.CLAUDE_CODE, AgentKind.CODEX, AgentKind.ANTIGRAVITY)
+
+internal fun formatTokens(count: Long): String = when {
+    count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
+    count >= 1_000 -> "%.1fk".format(count / 1_000.0)
+    else -> count.toString()
+}
+
+/** Live token usage of the open session, read from the agent's own logs. */
+@Composable
+private fun UsageStrip(usage: com.hivebench.app.usage.AgentUsage?, agent: AgentKind) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        @Composable
+        fun stat(text: String, color: Color = muted) =
+            Text(text, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = color, maxLines = 1)
+        if (usage == null || usage.totalTokens == 0L && usage.rateLimits.isEmpty()) {
+            stat(
+                if (agent == AgentKind.ANTIGRAVITY) "Token usage appears after the first reply, if Antigravity records it"
+                else "Token usage appears after the first reply",
+            )
+            return@Row
+        }
+        stat("in ${formatTokens(usage.inputTokens)}")
+        stat("out ${formatTokens(usage.outputTokens)}")
+        if (usage.cachedTokens + usage.cacheWriteTokens > 0) stat("cache ${formatTokens(usage.cachedTokens + usage.cacheWriteTokens)}")
+        usage.contextWindow?.takeIf { it > 0 && usage.contextTokens > 0 }?.let { window ->
+            stat("ctx ${(usage.contextTokens * 100 / window).coerceAtMost(100)}%")
+        }
+        usage.rateLimits.forEach { limit ->
+            val reset = limit.resetsAtMillis?.let { at ->
+                val minutes = ((at - System.currentTimeMillis()) / 60_000).coerceAtLeast(0)
+                if (minutes >= 120) " ↻${minutes / 60}h" else " ↻${minutes}m"
+            }.orEmpty()
+            stat(
+                "${limit.label} ${limit.usedPercent.toInt()}%$reset",
+                if (limit.usedPercent >= 80) MaterialTheme.colorScheme.error else muted,
+            )
+        }
+        usage.model?.let { stat(it) }
     }
 }
 

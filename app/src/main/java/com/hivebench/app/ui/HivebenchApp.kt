@@ -1069,7 +1069,7 @@ private fun RuntimeSetupPromptScreen(
     }
 }
 
-private const val CORE_RUNTIME_DOWNLOAD_MB = 69
+private const val CORE_RUNTIME_DOWNLOAD_MB = 70
 private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val AGY_RUNTIME_DOWNLOAD_MB = 40
@@ -1821,7 +1821,7 @@ private fun RootScreenHost(
                 RootScreen.TERMINAL -> com.hivebench.app.terminal.ShellTerminal(
                     sessionKey = "shell:root",
                     title = "Terminal",
-                    subtitle = "bash · Ubuntu 20.04 (PRoot)",
+                    subtitle = "bash · Ubuntu 24.04 (PRoot)",
                     launch = { viewModel.shellLaunch(null) },
                 )
                 RootScreen.SETTINGS -> SettingsScreen(

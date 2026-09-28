@@ -4,16 +4,16 @@
   "minimumAndroidApi": 26,
   "bundles": {
     "core": {
-      "version": "2026.09.5",
-      "file": "pocketdev-core-arm64-2026.09.5.tar.zst",
-      "sha256": "df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012",
-      "compressedBytes": 72185773,
-      "uncompressedBytes": 369172480,
-      "base": "Ubuntu 20.04.5 ARM64",
+      "version": "2026.09.6",
+      "file": "pocketdev-core-arm64-2026.09.6.tar.zst",
+      "sha256": "3788654ca41ab7ebf9596a3c1ec9770c3790f9240cb8a90eb94ea93c414c4eb4",
+      "compressedBytes": 73653111,
+      "base": "Ubuntu 24.04.5 ARM64",
       "includes": [
         "Node.js 24.19.0",
         "npm 11.17.0",
-        "Git 2.25.1",
+        "Git 2.43.0",
+        "OpenSSL 3",
         "No coding agents",
         "No optional language stacks"
       ]
@@ -24,16 +24,17 @@
       "sha256": "0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724",
       "compressedBytes": 75289800,
       "uncompressedBytes": 215224320,
-      "includes": ["Claude Code 2.1.263 ARM64", "Version marker"],
-      "excludes": ["Authentication", "Settings", "Conversations", "Projects", "Device data"]
-    },
-    "python": {
-      "version": "2026.09.2",
-      "file": "pocketdev-python-arm64-2026.09.2.tar.zst",
-      "sha256": "6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85",
-      "compressedBytes": 55419626,
-      "uncompressedBytes": 42127360,
-      "includes": ["Python 3", "pip", "venv", "build tools"]
+      "includes": [
+        "Claude Code 2.1.263 ARM64",
+        "Version marker"
+      ],
+      "excludes": [
+        "Authentication",
+        "Settings",
+        "Conversations",
+        "Projects",
+        "Device data"
+      ]
     },
     "android": {
       "version": "2026.09.1",
@@ -56,8 +57,17 @@
       "sha256": "a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78",
       "compressedBytes": 41870025,
       "uncompressedBytes": 200048640,
-      "includes": ["Antigravity CLI 1.1.27 ARM64", "Version marker"],
-      "excludes": ["OAuth credentials", "Settings", "Conversations", "Projects", "Device data"]
+      "includes": [
+        "Antigravity CLI 1.1.27 ARM64",
+        "Version marker"
+      ],
+      "excludes": [
+        "OAuth credentials",
+        "Settings",
+        "Conversations",
+        "Projects",
+        "Device data"
+      ]
     },
     "dsh": {
       "version": "2026.09.1",
