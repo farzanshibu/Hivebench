@@ -39,7 +39,7 @@ val runtimeReleaseBaseUrl =
     "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
 // In-app update feed: CI attaches hivebench-update.json to every tagged GitHub release.
 val appUpdateManifestUrl = providers.gradleProperty("appUpdateManifestUrl").orNull
-    ?: "https://github.com/farzanshibu/Hivebench/releases/latest/download/hivebench-update.json"
+    ?: "https://github.com/farzanshibu/hivebench/releases/latest/download/hivebench-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 

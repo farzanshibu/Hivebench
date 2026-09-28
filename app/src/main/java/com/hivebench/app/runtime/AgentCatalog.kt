@@ -21,8 +21,11 @@ sealed interface AgentPackage {
     /** Global npm package; npm links [bin] into /usr/local/bin. */
     data class Npm(val name: String, val bin: String) : AgentPackage
 
-    /** GitHub release tarball containing [bin], verified against the release's SHA256SUMS. */
-    data class GitHubRelease(val repo: String, val asset: String, val bin: String) : AgentPackage
+    /**
+     * GitHub release tarball verified against the release's SHA256SUMS. The executable
+     * [member] inside the archive is installed as [bin].
+     */
+    data class GitHubRelease(val repo: String, val asset: String, val bin: String, val member: String = bin) : AgentPackage
 
     /** Runs a user-supplied shell command; nothing to install. */
     data object UserCommand : AgentPackage
@@ -186,7 +189,7 @@ object AgentCatalog {
         ),
         AgentSpec(
             kind = AgentKind.JCODE,
-            pkg = AgentPackage.GitHubRelease("1jehuang/jcode", "jcode-linux-aarch64.tar.gz", "jcode"),
+            pkg = AgentPackage.GitHubRelease("1jehuang/jcode", "jcode-linux-aarch64.tar.gz", "jcode", member = "jcode-linux-aarch64"),
             launch = listOf("/usr/local/bin/jcode"),
             login = null,
             loginHint = "JCode walks you through provider sign-in when it first starts.",

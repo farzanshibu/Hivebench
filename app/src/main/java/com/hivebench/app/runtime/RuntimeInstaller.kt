@@ -337,7 +337,7 @@ class RuntimeInstaller(private val context: Context) {
             var entry = archive.nextEntry
             while (entry != null) {
                 val name = entry.name.removePrefix("./")
-                if (entry.isFile && (name == pkg.bin || name.endsWith("/${pkg.bin}"))) {
+                if (entry.isFile && (name == pkg.member || name.endsWith("/${pkg.member}"))) {
                     val staged = File(destination.parentFile, ".${pkg.bin}-$releaseTag.installing")
                     FileOutputStream(staged).use { archive.copyTo(it) }
                     Os.chmod(staged.absolutePath, 0b111101101)
