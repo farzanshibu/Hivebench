@@ -1142,6 +1142,9 @@ class RuntimeInstaller(private val context: Context) {
         }
     }
 
+    private fun hasEmbeddedBundle(bundle: RuntimeBundle): Boolean =
+        runCatching { context.assets.list("runtime")?.contains(bundle.fileName) == true }.getOrDefault(false)
+
     private suspend fun obtainRuntimeBundle(
         bundle: RuntimeBundle,
         preferEmbedded: Boolean,
@@ -1151,7 +1154,8 @@ class RuntimeInstaller(private val context: Context) {
     ): File {
         downloads.mkdirs()
         val destination = File(downloads, bundle.fileName)
-        val useEmbedded = preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES
+        // Bundles are gitignored, so a build may lack the asset; download it then.
+        val useEmbedded = (preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES) && hasEmbeddedBundle(bundle)
         if (useEmbedded) {
             onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from, 0, bundle.compressedBytes))
             val temporary = File(downloads, "${bundle.fileName}.part")
