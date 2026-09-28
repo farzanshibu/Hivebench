@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hivebench mark: yellow hive cell, thick black outline, hard offset shadow, >_ prompt. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.98" android:scaleY="0.98">
+        <path android:fillColor="#F1EDE3" android:pathData="M57,31 L79.5,44 L79.5,70 L57,83 L34.5,70 L34.5,44 Z" />
+        <path android:fillColor="#FFD000" android:strokeColor="#000000" android:strokeWidth="4" android:strokeLineJoin="round" android:pathData="M54,28 L76.5,41 L76.5,67 L54,80 L31.5,67 L31.5,41 Z" />
+        <path android:fillColor="#00000000" android:strokeColor="#000000" android:strokeWidth="5.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M43,45 L52,54 L43,63" />
+        <path android:fillColor="#00000000" android:strokeColor="#000000" android:strokeWidth="5.5" android:strokeLineCap="round" android:pathData="M56,63 L66,63" />
+    </group>
+</vector>
